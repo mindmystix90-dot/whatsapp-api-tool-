@@ -1,6 +1,6 @@
 console.log('[VERCEL] function module loading');
 
-import app, { appReady } from '../server';
+import app, { appReady } from '../app';
 
 console.log('[VERCEL] server imported');
 
