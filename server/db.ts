@@ -197,10 +197,72 @@ function initFirebaseAdmin(): App | null {
   }
 }
 
-const firebaseApp = initFirebaseAdmin();
-export const firestore: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
-export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
-export const firebaseStorage: Storage | null = firebaseApp ? getStorage(firebaseApp) : null;
+let cachedFirebaseApp: App | null | undefined = undefined;
+let cachedFirestore: Firestore | null | undefined = undefined;
+let cachedAuth: Auth | null | undefined = undefined;
+let cachedStorage: Storage | null | undefined = undefined;
+
+export function getFirebaseApp(): App | null {
+  if (cachedFirebaseApp !== undefined) {
+    return cachedFirebaseApp;
+  }
+  cachedFirebaseApp = initFirebaseAdmin();
+  return cachedFirebaseApp;
+}
+
+export function getFirestoreInstance(): Firestore | null {
+  if (cachedFirestore !== undefined) {
+    return cachedFirestore;
+  }
+  const app = getFirebaseApp();
+  cachedFirestore = app ? getFirestore(app) : null;
+  return cachedFirestore;
+}
+
+export function getAuthInstance(): Auth | null {
+  if (cachedAuth !== undefined) {
+    return cachedAuth;
+  }
+  const app = getFirebaseApp();
+  cachedAuth = app ? getAuth(app) : null;
+  return cachedAuth;
+}
+
+export function getStorageInstance(): Storage | null {
+  if (cachedStorage !== undefined) {
+    return cachedStorage;
+  }
+  const app = getFirebaseApp();
+  cachedStorage = app ? getStorage(app) : null;
+  return cachedStorage;
+}
+
+export const firestore: Firestore | null = new Proxy({} as any, {
+  get(_target, prop) {
+    const instance = getFirestoreInstance();
+    if (!instance) return null;
+    const val = Reflect.get(instance, prop);
+    return typeof val === 'function' ? val.bind(instance) : val;
+  }
+});
+
+export const firebaseAuth: Auth | null = new Proxy({} as any, {
+  get(_target, prop) {
+    const instance = getAuthInstance();
+    if (!instance) return null;
+    const val = Reflect.get(instance, prop);
+    return typeof val === 'function' ? val.bind(instance) : val;
+  }
+});
+
+export const firebaseStorage: Storage | null = new Proxy({} as any, {
+  get(_target, prop) {
+    const instance = getStorageInstance();
+    if (!instance) return null;
+    const val = Reflect.get(instance, prop);
+    return typeof val === 'function' ? val.bind(instance) : val;
+  }
+});
 
 function isVercelEnvironment(): boolean {
   return Boolean(process.env.VERCEL);

@@ -1,7 +1,6 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import {
   db
 } from './server/db';
@@ -30,7 +29,12 @@ const PORT = 3000;
 
 // Prevent body-parser stream hanging on Vercel where req.body is pre-parsed
 app.use((req, res, next) => {
-  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+  if (typeof req.body === 'string' && req.body.trim()) {
+    try {
+      req.body = JSON.parse(req.body);
+    } catch {}
+  }
+  if (req.body !== undefined && req.body !== null) {
     (req as any)._body = true;
   }
   next();
@@ -39,10 +43,14 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Seed admin user in background (non-blocking)
-export const appReady = initAdminUser().catch((err) => {
-  console.warn('⚠️ Non-fatal background admin seed warning:', err?.message || err);
-});
+// Seed admin user in background (non-blocking, skipped during Vercel module load)
+export const appReady = (async () => {
+  if (!process.env.VERCEL) {
+    await initAdminUser().catch((err) => {
+      console.warn('⚠️ Non-fatal background admin seed warning:', err?.message || err);
+    });
+  }
+})();
 
 // ==========================================
 // META WHATSAPP WEBHOOK ROUTES (PUBLIC)
@@ -980,13 +988,17 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
   // ==========================================
   if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== 'production') {
-      createViteServer({
-        server: { middlewareMode: true },
-        appType: 'spa'
-      }).then((vite) => {
-        app.use(vite.middlewares);
+      import('vite').then(({ createServer: createViteServer }) => {
+        createViteServer({
+          server: { middlewareMode: true },
+          appType: 'spa'
+        }).then((vite) => {
+          app.use(vite.middlewares);
+        }).catch((err) => {
+          console.error('Failed to create Vite dev server:', err);
+        });
       }).catch((err) => {
-        console.error('Failed to create Vite dev server:', err);
+        console.error('Failed to dynamically import Vite:', err);
       });
     } else {
       const distPath = path.join(process.cwd(), 'dist');
