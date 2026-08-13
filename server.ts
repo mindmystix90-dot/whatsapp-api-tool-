@@ -214,44 +214,53 @@ async function setupApp() {
   // WHATSAPP CONNECTION API
   // ==========================================
   app.get('/api/whatsapp', authenticateToken, async (req: AuthenticatedRequest, res) => {
-    let connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
-    if (!connection) {
-      connection = await db.upsertWhatsAppConnection({
-        id: `wa_${req.user!.business_id}`,
-        business_id: req.user!.business_id,
-        meta_app_id: '',
-        waba_id: '',
-        phone_number_id: '',
-        phone_number: '',
-        display_name: '',
-        access_token: '',
-        webhook_verify_token: process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123',
-        status: 'Not Connected',
-        last_verified_at: null,
-        error_message: null,
-        last_webhook_received_at: null,
-        coexistence_enabled: false,
-        coexistence_mode: 'manual',
-        safety_status: 'GREEN',
-        safety_paused: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+    try {
+      let connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
+      if (!connection) {
+        connection = await db.upsertWhatsAppConnection({
+          id: `wa_${req.user!.business_id}`,
+          business_id: req.user!.business_id,
+          meta_app_id: '',
+          waba_id: '',
+          phone_number_id: '',
+          phone_number: '',
+          display_name: '',
+          access_token: '',
+          webhook_verify_token: process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123',
+          status: 'Not Connected',
+          last_verified_at: null,
+          error_message: null,
+          last_webhook_received_at: null,
+          coexistence_enabled: false,
+          coexistence_mode: 'manual',
+          safety_status: 'GREEN',
+          safety_paused: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      // Mask access token when returning to client for security
+      const maskedConnection = {
+        ...connection,
+        access_token: connection.access_token ? '••••••••••••••••' : ''
+      };
+
+      const host = req.headers.host || 'localhost';
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const webhookUrl = process.env.APP_URL 
+        ? `${process.env.APP_URL}/api/whatsapp/webhook`
+        : `${protocol}://${host}/api/whatsapp/webhook`;
+
+      return res.json({
+        connection: maskedConnection,
+        webhook_url: webhookUrl,
+        has_access_token: Boolean(connection.access_token)
       });
+    } catch (err: any) {
+      console.error('Failed to get WhatsApp connection:', err);
+      return res.status(500).json({ error: 'Failed to retrieve WhatsApp status' });
     }
-
-    // Mask access token when returning to client for security
-    const maskedConnection = {
-      ...connection,
-      access_token: connection.access_token ? '••••••••••••••••' : ''
-    };
-
-    const webhookUrl = `${process.env.APP_URL || 'https://' + req.headers.host}/api/whatsapp/webhook`;
-
-    res.json({
-      connection: maskedConnection,
-      webhook_url: webhookUrl,
-      has_access_token: Boolean(connection.access_token)
-    });
   });
 
   app.post('/api/whatsapp/config', authenticateToken, async (req: AuthenticatedRequest, res) => {
@@ -912,27 +921,33 @@ async function setupApp() {
   // ==========================================
   // VITE DEVELOPMENT MIDDLEWARE / STATIC SERVE
   // ==========================================
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production') {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa'
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 }
 
-setupApp().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Fishcatch Backend running on http://0.0.0.0:${PORT}`);
+export const appReady = setupApp();
+
+if (!process.env.VERCEL) {
+  appReady.then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Fishcatch Backend running on http://0.0.0.0:${PORT}`);
+    });
+  }).catch((err) => {
+    console.error('Failed to initialize server:', err);
   });
-}).catch((err) => {
-  console.error('Failed to initialize server:', err);
-});
+}
 
 export default app;

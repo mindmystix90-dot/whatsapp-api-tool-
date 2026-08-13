@@ -38,7 +38,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, setActiveTab }) => {
         }
       }
     } catch (err) {
-      console.error('Failed to load WhatsApp status:', err);
+      // Gracefully handle transient network errors during dev server restarts or polling
+      console.warn('Could not fetch WhatsApp status:', err instanceof Error ? err.message : String(err));
     } finally {
       setChecking(false);
     }
