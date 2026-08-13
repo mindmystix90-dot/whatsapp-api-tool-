@@ -1,43 +1,52 @@
 import app from '../app.js';
 
-export default async function handler(req: any, res: any) {
-  try {
-    const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-original-url']) : null;
-    if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
-      req.url = forwardedUri;
-    }
+export default function handler(req: any, res: any) {
+  return new Promise((resolve, reject) => {
+    res.on('finish', resolve);
+    res.on('close', resolve);
+    res.on('error', reject);
 
-    const urlPath = (req.url || '').split('?')[0];
+    try {
+      const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-original-url']) : null;
+      if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
+        req.url = forwardedUri;
+      }
 
-    // Webhook verification fallback
-    if (req.method === 'GET' && (urlPath === '/api/whatsapp/webhook' || urlPath === '/api/webhook/whatsapp')) {
-      const query = req.query || {};
-      const mode = query['hub.mode'] || query['mode'];
-      const token = query['hub.verify_token'] || query['verify_token'];
-      const challenge = query['hub.challenge'] || query['challenge'];
+      const urlPath = (req.url || '').split('?')[0];
 
-      if (mode === 'subscribe' && token) {
-        const defaultToken = process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123';
-        const isMatched = token === defaultToken || token === 'fishcatch_verify_token_123';
+      // Webhook verification fallback
+      if (req.method === 'GET' && (urlPath === '/api/whatsapp/webhook' || urlPath === '/api/webhook/whatsapp')) {
+        const query = req.query || {};
+        const mode = query['hub.mode'] || query['mode'];
+        const token = query['hub.verify_token'] || query['verify_token'];
+        const challenge = query['hub.challenge'] || query['challenge'];
 
-        if (isMatched) {
-          res.setHeader('Content-Type', 'text/plain');
-          return res.status(200).send(String(challenge || ''));
-        } else {
-          return res.status(403).send('Verify token mismatch');
+        if (mode === 'subscribe' && token) {
+          const defaultToken = process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123';
+          const isMatched = token === defaultToken || token === 'fishcatch_verify_token_123';
+
+          if (isMatched) {
+            res.setHeader('Content-Type', 'text/plain');
+            res.status(200).send(String(challenge || ''));
+            return;
+          } else {
+            res.status(403).send('Verify token mismatch');
+            return;
+          }
         }
       }
-    }
 
-    // Standard Express request handling for all other routes
-    return app(req, res);
-  } catch (err: any) {
-    console.error('[VERCEL MAIN HANDLER ERROR]:', err?.message || err);
-    if (!res.headersSent) {
-      return res.status(500).json({
-        error: 'Internal server error',
-        details: err?.message || String(err)
-      });
+      // Standard Express request handling for all other routes
+      app(req, res);
+    } catch (err: any) {
+      console.error('[VERCEL MAIN HANDLER ERROR]:', err?.message || err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'Internal server error',
+          details: err?.message || String(err)
+        });
+      }
+      resolve(null);
     }
-  }
+  });
 }

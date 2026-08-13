@@ -11,6 +11,18 @@
       "destination": "/api/whatsapp/webhook"
     },
     {
+      "source": "/api/whatsapp/test",
+      "destination": "/api/whatsapp/test"
+    },
+    {
+      "source": "/api/whatsapp/config",
+      "destination": "/api/whatsapp/config"
+    },
+    {
+      "source": "/api/whatsapp/send-test",
+      "destination": "/api/whatsapp/send-test"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     },

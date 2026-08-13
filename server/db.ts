@@ -295,7 +295,7 @@ class FirestoreDatabase {
   };
 
   public isUsingFirestore(): boolean {
-    return Boolean(firestore && isFirestoreConfigured);
+    return Boolean(isFirestoreConfigured && getFirestoreInstance() !== null);
   }
 
   private ensureDatabaseReady() {
@@ -595,37 +595,42 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const snap = await firestore!
-        .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
-        .where('businessId', '==', businessId)
-        .limit(1)
-        .get();
-      if (snap.empty) return undefined;
-      const doc = snap.docs[0];
-      const data = doc.data();
-      return {
-        id: doc.id,
-        business_id: data.businessId || data.business_id,
-        meta_app_id: data.metaAppId || data.meta_app_id || '',
-        waba_id: data.wabaId || data.waba_id || '',
-        phone_number_id: data.phoneNumberId || data.phone_number_id || '',
-        phone_number: data.phoneNumber || data.phone_number || '',
-        display_name: data.displayName || data.display_name || '',
-        access_token: data.accessToken || data.access_token || '',
-        webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
-        status: data.status || 'Not Connected',
-        last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
-        last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
-        error_message: data.errorMessage || data.error_message || null,
-        coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
-        coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
-        quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
-        safety_status: data.safetyStatus || data.safety_status || 'GREEN',
-        safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
-        safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
-        created_at: data.createdAt || data.created_at || new Date().toISOString(),
-        updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
-      };
+      try {
+        const snap = await firestore!
+          .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
+          .where('businessId', '==', businessId)
+          .limit(1)
+          .get();
+        if (!snap.empty) {
+          const doc = snap.docs[0];
+          const data = doc.data();
+          return {
+            id: doc.id,
+            business_id: data.businessId || data.business_id,
+            meta_app_id: data.metaAppId || data.meta_app_id || '',
+            waba_id: data.wabaId || data.waba_id || '',
+            phone_number_id: data.phoneNumberId || data.phone_number_id || '',
+            phone_number: data.phoneNumber || data.phone_number || '',
+            display_name: data.displayName || data.display_name || '',
+            access_token: data.accessToken || data.access_token || '',
+            webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
+            status: data.status || 'Not Connected',
+            last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
+            last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
+            error_message: data.errorMessage || data.error_message || null,
+            coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
+            coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
+            quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
+            safety_status: data.safetyStatus || data.safety_status || 'GREEN',
+            safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
+            safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
+            created_at: data.createdAt || data.created_at || new Date().toISOString(),
+            updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
+          };
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Firestore getWhatsAppConnectionByBusinessId error, falling back to memory store:', err?.message || err);
+      }
     }
 
     return this.mem.whatsappConnections.find((w) => w.business_id === businessId);
@@ -636,37 +641,42 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const snap = await firestore!
-        .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
-        .where('phoneNumberId', '==', phoneNumberId)
-        .limit(1)
-        .get();
-      if (snap.empty) return undefined;
-      const doc = snap.docs[0];
-      const data = doc.data();
-      return {
-        id: doc.id,
-        business_id: data.businessId || data.business_id,
-        meta_app_id: data.metaAppId || data.meta_app_id || '',
-        waba_id: data.wabaId || data.waba_id || '',
-        phone_number_id: data.phoneNumberId || data.phone_number_id || '',
-        phone_number: data.phoneNumber || data.phone_number || '',
-        display_name: data.displayName || data.display_name || '',
-        access_token: data.accessToken || data.access_token || '',
-        webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
-        status: data.status || 'Not Connected',
-        last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
-        last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
-        error_message: data.errorMessage || data.error_message || null,
-        coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
-        coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
-        quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
-        safety_status: data.safetyStatus || data.safety_status || 'GREEN',
-        safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
-        safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
-        created_at: data.createdAt || data.created_at || new Date().toISOString(),
-        updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
-      };
+      try {
+        const snap = await firestore!
+          .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
+          .where('phoneNumberId', '==', phoneNumberId)
+          .limit(1)
+          .get();
+        if (!snap.empty) {
+          const doc = snap.docs[0];
+          const data = doc.data();
+          return {
+            id: doc.id,
+            business_id: data.businessId || data.business_id,
+            meta_app_id: data.metaAppId || data.meta_app_id || '',
+            waba_id: data.wabaId || data.waba_id || '',
+            phone_number_id: data.phoneNumberId || data.phone_number_id || '',
+            phone_number: data.phoneNumber || data.phone_number || '',
+            display_name: data.displayName || data.display_name || '',
+            access_token: data.accessToken || data.access_token || '',
+            webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
+            status: data.status || 'Not Connected',
+            last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
+            last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
+            error_message: data.errorMessage || data.error_message || null,
+            coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
+            coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
+            quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
+            safety_status: data.safetyStatus || data.safety_status || 'GREEN',
+            safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
+            safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
+            created_at: data.createdAt || data.created_at || new Date().toISOString(),
+            updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
+          };
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Firestore getWhatsAppConnectionByPhoneNumberId error, falling back to memory store:', err?.message || err);
+      }
     }
 
     return this.mem.whatsappConnections.find((w) => w.phone_number_id === phoneNumberId && phoneNumberId !== '');
@@ -676,33 +686,37 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const snap = await firestore!.collection(COLLECTIONS.WHATSAPP_CONNECTIONS).get();
-      return snap.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          business_id: data.businessId || data.business_id,
-          meta_app_id: data.metaAppId || data.meta_app_id || '',
-          waba_id: data.wabaId || data.waba_id || '',
-          phone_number_id: data.phoneNumberId || data.phone_number_id || '',
-          phone_number: data.phoneNumber || data.phone_number || '',
-          display_name: data.displayName || data.display_name || '',
-          access_token: data.accessToken || data.access_token || '',
-          webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
-          status: data.status || 'Not Connected',
-          last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
-          last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
-          error_message: data.errorMessage || data.error_message || null,
-          coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
-          coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
-          quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
-          safety_status: data.safetyStatus || data.safety_status || 'GREEN',
-          safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
-          safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
-          created_at: data.createdAt || data.created_at || new Date().toISOString(),
-          updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
-        };
-      });
+      try {
+        const snap = await firestore!.collection(COLLECTIONS.WHATSAPP_CONNECTIONS).get();
+        return snap.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            business_id: data.businessId || data.business_id,
+            meta_app_id: data.metaAppId || data.meta_app_id || '',
+            waba_id: data.wabaId || data.waba_id || '',
+            phone_number_id: data.phoneNumberId || data.phone_number_id || '',
+            phone_number: data.phoneNumber || data.phone_number || '',
+            display_name: data.displayName || data.display_name || '',
+            access_token: data.accessToken || data.access_token || '',
+            webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
+            status: data.status || 'Not Connected',
+            last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
+            last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
+            error_message: data.errorMessage || data.error_message || null,
+            coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
+            coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
+            quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
+            safety_status: data.safetyStatus || data.safety_status || 'GREEN',
+            safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
+            safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
+            created_at: data.createdAt || data.created_at || new Date().toISOString(),
+            updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
+          };
+        });
+      } catch (err: any) {
+        console.warn('⚠️ Firestore getAllWhatsAppConnections error, falling back to memory store:', err?.message || err);
+      }
     }
 
     return [...this.mem.whatsappConnections];
@@ -714,33 +728,38 @@ class FirestoreDatabase {
     const docId = connection.id || `wa_${connection.business_id}`;
 
     if (this.isUsingFirestore()) {
-      await firestore!.collection(COLLECTIONS.WHATSAPP_CONNECTIONS).doc(docId).set(
-        {
-          id: docId,
-          businessId: connection.business_id, // tenant isolation
-          metaAppId: connection.meta_app_id ?? '',
-          wabaId: connection.waba_id ?? '',
-          phoneNumberId: connection.phone_number_id ?? '',
-          phoneNumber: connection.phone_number ?? '',
-          displayName: connection.display_name ?? '',
-          accessToken: connection.access_token ?? '',
-          webhookVerifyToken: connection.webhook_verify_token ?? 'fishcatch_verify_token_123',
-          status: connection.status ?? 'Not Connected',
-          lastVerifiedAt: connection.last_verified_at ?? null,
-          lastWebhookReceivedAt: connection.last_webhook_received_at ?? null,
-          errorMessage: connection.error_message ?? null,
-          coexistenceEnabled: connection.coexistence_enabled ?? false,
-          coexistenceMode: connection.coexistence_mode ?? 'none',
-          qualityRating: connection.quality_rating ?? 'GREEN',
-          safetyStatus: connection.safety_status ?? 'GREEN',
-          safetyPaused: connection.safety_paused ?? false,
-          safetyPausedReason: connection.safety_paused_reason ?? null,
-          createdAt: connection.created_at || now,
-          updatedAt: now
-        },
-        { merge: true }
-      );
-      return (await this.getWhatsAppConnectionByBusinessId(connection.business_id))!;
+      try {
+        await firestore!.collection(COLLECTIONS.WHATSAPP_CONNECTIONS).doc(docId).set(
+          {
+            id: docId,
+            businessId: connection.business_id, // tenant isolation
+            metaAppId: connection.meta_app_id ?? '',
+            wabaId: connection.waba_id ?? '',
+            phoneNumberId: connection.phone_number_id ?? '',
+            phoneNumber: connection.phone_number ?? '',
+            displayName: connection.display_name ?? '',
+            accessToken: connection.access_token ?? '',
+            webhookVerifyToken: connection.webhook_verify_token ?? 'fishcatch_verify_token_123',
+            status: connection.status ?? 'Not Connected',
+            lastVerifiedAt: connection.last_verified_at ?? null,
+            lastWebhookReceivedAt: connection.last_webhook_received_at ?? null,
+            errorMessage: connection.error_message ?? null,
+            coexistenceEnabled: connection.coexistence_enabled ?? false,
+            coexistenceMode: connection.coexistence_mode ?? 'none',
+            qualityRating: connection.quality_rating ?? 'GREEN',
+            safetyStatus: connection.safety_status ?? 'GREEN',
+            safetyPaused: connection.safety_paused ?? false,
+            safetyPausedReason: connection.safety_paused_reason ?? null,
+            createdAt: connection.created_at || now,
+            updatedAt: now
+          },
+          { merge: true }
+        );
+        const saved = await this.getWhatsAppConnectionByBusinessId(connection.business_id);
+        if (saved) return saved;
+      } catch (err: any) {
+        console.warn('⚠️ Firestore upsertWhatsAppConnection error, falling back to memory store:', err?.message || err);
+      }
     }
 
     const idx = this.mem.whatsappConnections.findIndex((w) => w.business_id === connection.business_id);
