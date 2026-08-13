@@ -1,14 +1,14 @@
-import { GoogleGenAI } from '@google/genai';
 import { Business, AISettings, Message, Customer } from '../src/types.js';
 
-let aiClient: GoogleGenAI | null = null;
+let aiClient: any = null;
 
-function getGeminiClient(): GoogleGenAI {
+async function getGeminiClient(): Promise<any> {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.warn('⚠️ GEMINI_API_KEY environment variable is not set. AI responses will fail.');
     }
+    const { GoogleGenAI } = await import('@google/genai');
     aiClient = new GoogleGenAI({
       apiKey: apiKey || 'dummy-key-for-init',
       httpOptions: {
@@ -36,7 +36,7 @@ export async function generateAIReply(input: GenerateReplyInput): Promise<string
     throw new Error('GEMINI_API_KEY environment variable is missing.');
   }
 
-  const ai = getGeminiClient();
+  const ai = await getGeminiClient();
 
   const systemInstruction = `
 You are "${aiSettings.agent_name || 'AI Assistant'}", the official WhatsApp AI agent for "${business.name || 'our business'}".
@@ -89,7 +89,7 @@ Please generate the appropriate WhatsApp response following all your guidelines.
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction: systemInstruction,

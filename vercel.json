@@ -3,6 +3,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/whatsapp",
+      "destination": "/api/whatsapp/index"
+    },
+    {
       "source": "/api/whatsapp/webhook",
       "destination": "/api/whatsapp/webhook"
     },
