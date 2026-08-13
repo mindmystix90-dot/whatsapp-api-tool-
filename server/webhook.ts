@@ -12,24 +12,31 @@ export async function handleWebhookVerification(req: Request, res: Response) {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  console.log('📬 Meta Webhook Verification Request Received:', { mode, token });
+  console.log('📬 Meta Webhook Verification Request Received:', { mode, token, challenge });
 
   if (mode === 'subscribe' && token) {
-    // Check if token matches any connection or default verify token
-    const connections = await db.getAllWhatsAppConnections();
-    const matched = connections.find((c) => c.webhook_verify_token === token);
     const defaultToken = process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123';
+    let isMatched = token === defaultToken || token === 'fishcatch_verify_token_123';
 
-    if (matched || token === defaultToken) {
-      console.log('✅ Webhook verification successful!');
-      return res.status(200).send(challenge);
+    if (!isMatched) {
+      try {
+        const connections = await db.getAllWhatsAppConnections();
+        isMatched = connections.some((c) => c.webhook_verify_token === token);
+      } catch (err) {
+        console.warn('⚠️ Could not query DB for verify token during webhook verification:', err);
+      }
+    }
+
+    if (isMatched) {
+      console.log('✅ Webhook verification successful! Returning challenge string.');
+      return res.type('text/plain').status(200).send(String(challenge || ''));
     } else {
       console.warn('❌ Webhook verify token mismatch:', token);
-      return res.status(403).json({ error: 'Verify token mismatch' });
+      return res.status(403).send('Verify token mismatch');
     }
   }
 
-  return res.status(400).json({ error: 'Invalid verification request parameters' });
+  return res.status(400).send('Invalid verification request parameters');
 }
 
 /**

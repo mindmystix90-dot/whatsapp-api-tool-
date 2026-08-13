@@ -20,7 +20,7 @@ import {
 export const WhatsAppView: React.FC = () => {
   const { fetchWithAuth } = useAuth();
   const [connection, setConnection] = useState<WhatsAppConnection | null>(null);
-  const [webhookUrl, setWebhookUrl] = useState<string>('');
+  const [webhookUrl, setWebhookUrl] = useState<string>('https://whatsapp-api-tool2.vercel.app/api/whatsapp/webhook');
   const [hasToken, setHasToken] = useState<boolean>(false);
 
   const [formData, setFormData] = useState({

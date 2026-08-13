@@ -19,10 +19,6 @@ export default async function handler(req: any, res: any) {
       'FIREBASE_PRIVATE_KEY length': privateKeyRaw ? privateKeyRaw.length : 0
     });
 
-    if (typeof res.setHeader === 'function') {
-      res.setHeader('Content-Type', 'application/json');
-    }
-
     const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-original-url']) : null;
     if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
       req.url = forwardedUri;
