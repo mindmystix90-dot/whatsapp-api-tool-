@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Fish, ArrowRight, ShieldCheck, CheckCircle2, Lock, Mail, User, Building2 } from 'lucide-react';
+import { Footer } from '../components/Footer';
 
-export const AuthView: React.FC = () => {
+interface AuthViewProps {
+  onNavigate?: (path: string) => void;
+}
+
+export const AuthView: React.FC<AuthViewProps> = ({ onNavigate }) => {
   const { login, signup } = useAuth();
   const [isSignup, setIsSignup] = useState<boolean>(false);
 
@@ -164,6 +169,10 @@ export const AuthView: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="w-full mt-12 relative z-10">
+        <Footer variant="dark" onNavigate={onNavigate} />
       </div>
     </div>
   );

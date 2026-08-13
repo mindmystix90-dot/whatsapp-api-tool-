@@ -31,6 +31,14 @@
       "destination": "/api/whatsapp/embedded-signup"
     },
     {
+      "source": "/api/whatsapp/data-deletion",
+      "destination": "/api/whatsapp/data-deletion"
+    },
+    {
+      "source": "/api/data-deletion",
+      "destination": "/api/whatsapp/data-deletion"
+    },
+    {
       "source": "/api/whatsapp/oauth/start",
       "destination": "/api/whatsapp/oauth/start"
     },

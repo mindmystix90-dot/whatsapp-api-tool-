@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { Header } from './components/Header';
+import { Footer } from './components/Footer';
+
+// Views
 import { DashboardView } from './views/DashboardView';
 import { ConversationsView } from './views/ConversationsView';
 import { LeadsView } from './views/LeadsView';
@@ -11,11 +14,46 @@ import { SettingsView } from './views/SettingsView';
 import { SafetyCenterView } from './views/SafetyCenterView';
 import { AdminView } from './views/AdminView';
 import { AuthView } from './views/AuthView';
+import { PrivacyPolicyView } from './views/PrivacyPolicyView';
+import { TermsView } from './views/TermsView';
+import { DataDeletionView } from './views/DataDeletionView';
+
 import { Fish } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
   const { user, loading } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [currentPath, setCurrentPath] = useState<string>(window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = useCallback((path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // Public Unauthenticated Pages (Privacy Policy, Terms of Service, Data Deletion)
+  const cleanPath = currentPath.toLowerCase().split('?')[0];
+
+  if (cleanPath === '/privacy-policy' || cleanPath === '/privacy') {
+    return <PrivacyPolicyView onNavigate={navigateTo} />;
+  }
+
+  if (cleanPath === '/terms' || cleanPath === '/terms-of-service') {
+    return <TermsView onNavigate={navigateTo} />;
+  }
+
+  if (cleanPath === '/data-deletion' || cleanPath === '/data-deletion-status') {
+    return <DataDeletionView onNavigate={navigateTo} />;
+  }
 
   if (loading) {
     return (
@@ -29,7 +67,7 @@ const MainLayout: React.FC = () => {
   }
 
   if (!user) {
-    return <AuthView />;
+    return <AuthView onNavigate={navigateTo} />;
   }
 
   return (
@@ -39,15 +77,19 @@ const MainLayout: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
-        <main className="flex-1 overflow-y-auto">
-          {activeTab === 'dashboard' && <DashboardView setActiveTab={setActiveTab} />}
-          {activeTab === 'conversations' && <ConversationsView />}
-          {activeTab === 'leads' && <LeadsView setActiveTab={setActiveTab} />}
-          {activeTab === 'ai-agent' && <AIAgentView />}
-          {activeTab === 'whatsapp' && <WhatsAppView />}
-          {activeTab === 'safety' && <SafetyCenterView />}
-          {activeTab === 'settings' && <SettingsView />}
-          {activeTab === 'admin' && user.role === 'admin' && <AdminView />}
+        <main className="flex-1 overflow-y-auto flex flex-col justify-between">
+          <div className="flex-1">
+            {activeTab === 'dashboard' && <DashboardView setActiveTab={setActiveTab} />}
+            {activeTab === 'conversations' && <ConversationsView />}
+            {activeTab === 'leads' && <LeadsView setActiveTab={setActiveTab} />}
+            {activeTab === 'ai-agent' && <AIAgentView />}
+            {activeTab === 'whatsapp' && <WhatsAppView />}
+            {activeTab === 'safety' && <SafetyCenterView />}
+            {activeTab === 'settings' && <SettingsView />}
+            {activeTab === 'admin' && user.role === 'admin' && <AdminView />}
+          </div>
+
+          <Footer variant="light" onNavigate={navigateTo} />
         </main>
       </div>
     </div>
