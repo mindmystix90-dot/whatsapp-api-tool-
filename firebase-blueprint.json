@@ -1,0 +1,182 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered user profile and authentication metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "businessId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "email", "name", "role", "businessId"]
+    },
+    "Business": {
+      "title": "Business",
+      "description": "Business profile and knowledge base for AI responses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "productsServices": { "type": "string" },
+        "prices": { "type": "string" },
+        "faqs": { "type": "string" },
+        "businessHours": { "type": "string" },
+        "location": { "type": "string" },
+        "contactInfo": { "type": "string" },
+        "additionalInfo": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "businessId", "name"]
+    },
+    "WhatsAppConnection": {
+      "title": "WhatsAppConnection",
+      "description": "Meta WhatsApp Business Cloud API configuration and state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "metaAppId": { "type": "string" },
+        "wabaId": { "type": "string" },
+        "phoneNumberId": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "displayName": { "type": "string" },
+        "webhookVerifyToken": { "type": "string" },
+        "status": { "type": "string", "enum": ["Not Connected", "Connected", "Connection Error"] },
+        "lastVerifiedAt": { "type": "string" },
+        "errorMessage": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "status"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "WhatsApp contact or lead customer details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "waId": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "name": { "type": "string" },
+        "profilePicUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "waId", "phoneNumber", "name"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "WhatsApp chat conversation thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "mode": { "type": "string", "enum": ["AI", "HUMAN"] },
+        "status": { "type": "string", "enum": ["active", "closed"] },
+        "unreadCount": { "type": "number" },
+        "lastMessage": { "type": "string" },
+        "lastMessageAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "customerId", "mode", "status"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message in a conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "senderType": { "type": "string", "enum": ["customer", "ai", "human"] },
+        "body": { "type": "string" },
+        "waMessageId": { "type": "string" },
+        "status": { "type": "string", "enum": ["sent", "delivered", "read", "failed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "conversationId", "businessId", "customerId", "senderType", "body"]
+    },
+    "Lead": {
+      "title": "Lead",
+      "description": "Captured sales lead metadata and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "waNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["NEW", "CONTACTED", "QUALIFIED", "CONVERTED", "LOST"] },
+        "source": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "customerId", "status"]
+    },
+    "AISettings": {
+      "title": "AISettings",
+      "description": "AI agent configuration and prompt settings for a business",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "businessId": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "agentName": { "type": "string" },
+        "systemInstructions": { "type": "string" },
+        "tone": { "type": "string" },
+        "languagePreference": { "type": "string" },
+        "humanHandoffRules": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "enabled", "agentName"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "businesses/{businessId}": {
+      "schema": "Business",
+      "description": "Business entity collection"
+    },
+    "whatsappConnections/{connectionId}": {
+      "schema": "WhatsAppConnection",
+      "description": "WhatsApp credentials collection"
+    },
+    "customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customers collection"
+    },
+    "conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "Conversations collection"
+    },
+    "messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages collection"
+    },
+    "leads/{leadId}": {
+      "schema": "Lead",
+      "description": "Leads collection"
+    },
+    "aiSettings/{settingsId}": {
+      "schema": "AISettings",
+      "description": "AI agent settings collection"
+    }
+  }
+}
