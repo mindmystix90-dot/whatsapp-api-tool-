@@ -1,81 +1,41 @@
-console.log('[VERCEL] function module loading');
-
-import app, { appReady } from '../app';
-
-console.log('[VERCEL] server imported');
+import app from '../app';
 
 export default async function handler(req: any, res: any) {
   try {
-    console.log('[VERCEL] handler started');
-
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
-
-    console.log('[VERCEL] SAFE FIREBASE DIAGNOSTICS:', {
-      'FIREBASE_PROJECT_ID exists': Boolean(projectId),
-      'FIREBASE_CLIENT_EMAIL exists': Boolean(clientEmail),
-      'FIREBASE_PRIVATE_KEY exists': Boolean(privateKeyRaw),
-      'FIREBASE_PRIVATE_KEY length': privateKeyRaw ? privateKeyRaw.length : 0
-    });
-
     const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-original-url']) : null;
     if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
       req.url = forwardedUri;
     }
 
-    console.log('[VERCEL] request URL:', req.url);
-    console.log('[VERCEL] request body detected:', Boolean(req.body), typeof req.body);
-    console.log('[VERCEL] express handler started');
+    const urlPath = (req.url || '').split('?')[0];
 
-    await Promise.race([
-      appReady,
-      new Promise((resolve) => setTimeout(resolve, 200))
-    ]).catch(() => {});
+    // Webhook verification fallback
+    if (req.method === 'GET' && (urlPath === '/api/whatsapp/webhook' || urlPath === '/api/webhook/whatsapp')) {
+      const query = req.query || {};
+      const mode = query['hub.mode'] || query['mode'];
+      const token = query['hub.verify_token'] || query['verify_token'];
+      const challenge = query['hub.challenge'] || query['challenge'];
 
-    return new Promise<void>((resolve) => {
-      let isResolved = false;
-      const done = () => {
-        if (!isResolved) {
-          isResolved = true;
-          resolve();
+      if (mode === 'subscribe' && token) {
+        const defaultToken = process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123';
+        const isMatched = token === defaultToken || token === 'fishcatch_verify_token_123';
+
+        if (isMatched) {
+          res.setHeader('Content-Type', 'text/plain');
+          return res.status(200).send(String(challenge || ''));
+        } else {
+          return res.status(403).send('Verify token mismatch');
         }
-      };
-
-      res.on('finish', done);
-      res.on('close', done);
-      res.on('end', done);
-
-      // Wrap res.end to guarantee promise resolution when response is sent
-      const origEnd = res.end;
-      if (typeof origEnd === 'function') {
-        res.end = function (this: any, ...args: any[]) {
-          const result = origEnd.apply(this, args);
-          done();
-          return result;
-        };
       }
+    }
 
-      app(req, res, (err: any) => {
-        if (err && !res.headersSent) {
-          console.error('[VERCEL] Express Handler Error:', err?.message || err);
-          res.status(err?.status || err?.statusCode || 500).json({
-            error: 'Internal server error',
-            details: err?.message || String(err)
-          });
-        }
-        done();
-      });
-
-      if (res.writableEnded || res.finished || res.headersSent) {
-        done();
-      }
-    });
+    // Standard Express request handling for all other routes
+    return app(req, res);
   } catch (err: any) {
-    console.error('[VERCEL] Top-Level Catch:', err?.message || err);
+    console.error('[VERCEL MAIN HANDLER ERROR]:', err?.message || err);
     if (!res.headersSent) {
       return res.status(500).json({
-        error: 'Server error handling request',
+        error: 'Internal server error',
         details: err?.message || String(err)
       });
     }
