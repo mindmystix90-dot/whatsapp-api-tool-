@@ -47,7 +47,7 @@ async function setupApp() {
   // ==========================================
   // AUTHENTICATION ROUTES
   // ==========================================
-  app.post('/api/auth/signup', async (req, res) => {
+  app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
     try {
       const { email, password, name, businessName } = req.body;
 
@@ -916,6 +916,26 @@ async function setupApp() {
   app.get('/api/admin/audit-logs', authenticateToken, requireAdmin, async (req: AuthenticatedRequest, res) => {
     const auditLogs = await db.getAdminAuditLogs();
     res.json({ auditLogs });
+  });
+
+  // ==========================================
+  // API 404 FALLBACK (Guarantees JSON for unhandled /api/* paths)
+  // ==========================================
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
+  });
+
+  // ==========================================
+  // GLOBAL EXPRESS ERROR HANDLER (Guarantees JSON for unhandled server errors)
+  // ==========================================
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled API Error:', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(err.status || err.statusCode || 500).json({
+      error: err.message || 'An unexpected server error occurred'
+    });
   });
 
   // ==========================================

@@ -60,9 +60,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    const data = await res.json();
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
+    }
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to login');
+      throw new Error(data?.error || 'Failed to login');
     }
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
@@ -70,14 +75,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signup = async (email: string, password: string, name: string, businessName: string) => {
-    const res = await fetch('/api/auth/signup', {
+    const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name, businessName })
     });
-    const data = await res.json();
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
+    }
     if (!res.ok) {
-      throw new Error(data.error || 'Failed to sign up');
+      throw new Error(data?.error || 'Failed to sign up');
     }
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
