@@ -15,7 +15,7 @@ import {
   AISettings,
   LeadStatus,
   WhatsAppConnectionStatus
-} from '../src/types';
+} from '../src/types.js';
 
 // Firestore Collection Names
 export const COLLECTIONS = {

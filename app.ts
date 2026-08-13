@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import {
   db
-} from './server/db';
+} from './server/db.js';
 import {
   authenticateToken,
   requireAdmin,
@@ -12,15 +12,15 @@ import {
   comparePassword,
   initAdminUser,
   AuthenticatedRequest
-} from './server/auth';
+} from './server/auth.js';
 import {
   verifyWhatsAppCredentials,
   sendWhatsAppTextMessage,
   sendWhatsAppTemplateMessage
-} from './server/whatsapp';
-import { generateAIReply } from './server/gemini';
-import { handleWebhookVerification, handleWebhookEvent } from './server/webhook';
-import { User, Business, AISettings, WhatsAppConnection, Customer, LeadStatus } from './src/types';
+} from './server/whatsapp.js';
+import { generateAIReply } from './server/gemini.js';
+import { handleWebhookVerification, handleWebhookEvent } from './server/webhook.js';
+import { User, Business, AISettings, WhatsAppConnection, Customer, LeadStatus } from './src/types.js';
 
 dotenv.config();
 

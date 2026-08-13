@@ -1,4 +1,4 @@
-import { WhatsAppConnection } from '../src/types';
+import { WhatsAppConnection } from '../src/types.js';
 
 export interface WhatsAppVerificationResult {
   success: boolean;
