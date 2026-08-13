@@ -293,9 +293,17 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
 
       const host = req.headers.host || 'localhost';
       const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const webhookUrl = process.env.APP_URL 
-        ? `${process.env.APP_URL}/api/whatsapp/webhook`
-        : `${protocol}://${host}/api/whatsapp/webhook`;
+      
+      let baseUrl = (process.env.APP_URL || '').trim().replace(/\/$/, '');
+      if (!baseUrl || baseUrl.includes('your-domain.vercel.app')) {
+        if (host.includes('vercel.app')) {
+          baseUrl = `${protocol}://${host}`;
+        } else {
+          baseUrl = 'https://whatsapp-api-tool2.vercel.app';
+        }
+      }
+      
+      const webhookUrl = `${baseUrl}/api/whatsapp/webhook`;
 
       return res.json({
         connection: maskedConnection,
