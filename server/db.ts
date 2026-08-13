@@ -178,8 +178,8 @@ export const firestore: Firestore | null = firebaseApp ? getFirestore(firebaseAp
 export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
 export const firebaseStorage: Storage | null = firebaseApp ? getStorage(firebaseApp) : null;
 
-function isProduction(): boolean {
-  return Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
+function isVercelEnvironment(): boolean {
+  return Boolean(process.env.VERCEL);
 }
 
 // Ephemeral memory fallback store ONLY for local development when credentials are not configured
@@ -213,12 +213,12 @@ class FirestoreDatabase {
   }
 
   private ensureDatabaseReady() {
-    if (isProduction() && !this.isUsingFirestore()) {
+    if (isVercelEnvironment() && !this.isUsingFirestore()) {
       console.error(
-        '❌ [Database Configuration Error]: Required Firebase credentials missing in production/Vercel. Required: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_JSON.'
+        '❌ [Database Configuration Error]: Required Firebase credentials missing in Vercel environment. Required: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_JSON.'
       );
       throw new Error(
-        'Database Configuration Error: Firebase credentials (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing or invalid in Vercel environment variables. In-memory fallback is disabled in production.'
+        'Database Configuration Error: Firebase credentials (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing or invalid in Vercel environment variables. In-memory fallback is disabled on Vercel.'
       );
     }
   }

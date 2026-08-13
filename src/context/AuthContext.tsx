@@ -67,7 +67,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
     }
     if (!res.ok) {
-      throw new Error(data?.error || 'Failed to login');
+      const errMsg = data?.details ? `${data.error}: ${data.details}` : (data?.error || 'Failed to login');
+      throw new Error(errMsg);
     }
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
@@ -87,7 +88,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
     }
     if (!res.ok) {
-      throw new Error(data?.error || 'Failed to sign up');
+      const errMsg = data?.details ? `${data.error}: ${data.details}` : (data?.error || 'Failed to sign up');
+      throw new Error(errMsg);
     }
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
