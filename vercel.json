@@ -23,6 +23,22 @@
       "destination": "/api/whatsapp/send-test"
     },
     {
+      "source": "/api/whatsapp/disconnect",
+      "destination": "/api/whatsapp/disconnect"
+    },
+    {
+      "source": "/api/whatsapp/embedded-signup",
+      "destination": "/api/whatsapp/embedded-signup"
+    },
+    {
+      "source": "/api/whatsapp/oauth/start",
+      "destination": "/api/whatsapp/oauth/start"
+    },
+    {
+      "source": "/api/whatsapp/oauth/callback",
+      "destination": "/api/whatsapp/oauth/callback"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     },

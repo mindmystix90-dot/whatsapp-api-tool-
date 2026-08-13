@@ -285,6 +285,12 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
         });
       }
 
+      const allConnections = await db.getWhatsAppConnectionsByBusinessId(req.user!.business_id);
+      const maskedConnections = allConnections.map((c) => ({
+        ...c,
+        access_token: c.access_token ? '••••••••••••••••' : ''
+      }));
+
       // Mask access token when returning to client for security
       const maskedConnection = {
         ...connection,
@@ -307,6 +313,7 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
 
       return res.json({
         connection: maskedConnection,
+        connections: maskedConnections,
         webhook_url: webhookUrl,
         has_access_token: Boolean(connection.access_token)
       });
@@ -496,6 +503,47 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
       return res.status(500).json({
         success: false,
         error: `Failed to send test message: ${err.message || String(err)}`
+      });
+    }
+  });
+
+  app.post('/api/whatsapp/disconnect', authenticateToken, async (req: AuthenticatedRequest, res) => {
+    try {
+      const businessId = req.user!.business_id;
+      const existing = await db.getWhatsAppConnectionByBusinessId(businessId);
+
+      if (existing) {
+        await db.upsertWhatsAppConnection({
+          ...existing,
+          status: 'Not Connected',
+          phone_number_id: '',
+          phone_number: '',
+          display_name: '',
+          access_token: '',
+          error_message: null,
+          last_verified_at: null,
+          updated_at: new Date().toISOString()
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'WhatsApp disconnected successfully',
+        connection: {
+          id: existing?.id || `wa_${businessId}`,
+          business_id: businessId,
+          status: 'Not Connected',
+          phone_number_id: '',
+          phone_number: '',
+          display_name: '',
+          access_token: ''
+        }
+      });
+    } catch (err: any) {
+      console.error('❌ Exception in /api/whatsapp/disconnect:', err);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to disconnect WhatsApp: ${err.message || String(err)}`
       });
     }
   });

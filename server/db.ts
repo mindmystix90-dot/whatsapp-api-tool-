@@ -281,6 +281,33 @@ interface EphemeralStore {
   aiSettings: AISettings[];
 }
 
+const FILE_STORE_PATH = process.env.VERCEL ? '/tmp/fishcatch_wa_store.json' : path.join(process.cwd(), '.data', 'fishcatch_wa_store.json');
+
+function saveWaConnectionsToFile(connections: WhatsAppConnection[]) {
+  try {
+    const dir = path.dirname(FILE_STORE_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(FILE_STORE_PATH, JSON.stringify(connections, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('⚠️ Failed to save WA connections to file store:', e);
+  }
+}
+
+function loadWaConnectionsFromFile(): WhatsAppConnection[] {
+  try {
+    if (fs.existsSync(FILE_STORE_PATH)) {
+      const raw = fs.readFileSync(FILE_STORE_PATH, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) return data;
+    }
+  } catch (e) {
+    console.warn('⚠️ Failed to load WA connections from file store:', e);
+  }
+  return [];
+}
+
 class FirestoreDatabase {
   private mem: EphemeralStore = {
     users: [],
@@ -300,8 +327,14 @@ class FirestoreDatabase {
 
   private ensureDatabaseReady() {
     if (!this.isUsingFirestore()) {
+      if (this.mem.whatsappConnections.length === 0) {
+        const loaded = loadWaConnectionsFromFile();
+        if (loaded.length > 0) {
+          this.mem.whatsappConnections = loaded;
+        }
+      }
       if (isVercelEnvironment()) {
-        console.warn('⚠️ [Firebase Vercel Notice]: Firebase environment variables are missing. Using in-memory store for this request.');
+        console.warn('⚠️ [Firebase Vercel Notice]: Firebase environment variables are missing. Using file/memory store for this request.');
       }
     }
   }
@@ -590,8 +623,8 @@ class FirestoreDatabase {
   }
 
   // --- WhatsApp Connections ---
-  public async getWhatsAppConnectionByBusinessId(businessId: string): Promise<WhatsAppConnection | undefined> {
-    if (!businessId) return undefined;
+  public async getWhatsAppConnectionsByBusinessId(businessId: string): Promise<WhatsAppConnection[]> {
+    if (!businessId) return [];
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
@@ -599,41 +632,51 @@ class FirestoreDatabase {
         const snap = await firestore!
           .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
           .where('businessId', '==', businessId)
-          .limit(1)
           .get();
         if (!snap.empty) {
-          const doc = snap.docs[0];
-          const data = doc.data();
-          return {
-            id: doc.id,
-            business_id: data.businessId || data.business_id,
-            meta_app_id: data.metaAppId || data.meta_app_id || '',
-            waba_id: data.wabaId || data.waba_id || '',
-            phone_number_id: data.phoneNumberId || data.phone_number_id || '',
-            phone_number: data.phoneNumber || data.phone_number || '',
-            display_name: data.displayName || data.display_name || '',
-            access_token: data.accessToken || data.access_token || '',
-            webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
-            status: data.status || 'Not Connected',
-            last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
-            last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
-            error_message: data.errorMessage || data.error_message || null,
-            coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
-            coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
-            quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
-            safety_status: data.safetyStatus || data.safety_status || 'GREEN',
-            safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
-            safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
-            created_at: data.createdAt || data.created_at || new Date().toISOString(),
-            updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
-          };
+          return snap.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              business_id: data.businessId || data.business_id,
+              meta_app_id: data.metaAppId || data.meta_app_id || '',
+              waba_id: data.wabaId || data.waba_id || '',
+              phone_number_id: data.phoneNumberId || data.phone_number_id || '',
+              phone_number: data.phoneNumber || data.phone_number || '',
+              display_name: data.displayName || data.display_name || '',
+              access_token: data.accessToken || data.access_token || '',
+              webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
+              status: data.status || 'Not Connected',
+              last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
+              last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
+              error_message: data.errorMessage || data.error_message || null,
+              coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
+              coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
+              quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
+              safety_status: data.safetyStatus || data.safety_status || 'GREEN',
+              safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
+              safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
+              created_at: data.createdAt || data.created_at || new Date().toISOString(),
+              updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
+            };
+          });
         }
       } catch (err: any) {
-        console.warn('⚠️ Firestore getWhatsAppConnectionByBusinessId error, falling back to memory store:', err?.message || err);
+        console.warn('⚠️ Firestore getWhatsAppConnectionsByBusinessId error, falling back to memory store:', err?.message || err);
       }
     }
 
-    return this.mem.whatsappConnections.find((w) => w.business_id === businessId);
+    return this.mem.whatsappConnections.filter((w) => w.business_id === businessId);
+  }
+
+  public async getWhatsAppConnectionByBusinessId(businessId: string): Promise<WhatsAppConnection | undefined> {
+    const all = await this.getWhatsAppConnectionsByBusinessId(businessId);
+    if (all.length > 0) {
+      // Return the connected one, or the latest updated one
+      const connected = all.find((w) => w.status === 'Connected');
+      return connected || all[0];
+    }
+    return undefined;
   }
 
   public async getWhatsAppConnectionByPhoneNumberId(phoneNumberId: string): Promise<WhatsAppConnection | undefined> {
@@ -772,7 +815,31 @@ class FirestoreDatabase {
     } else {
       this.mem.whatsappConnections.push({ ...connection, id: docId, updated_at: now });
     }
+    saveWaConnectionsToFile(this.mem.whatsappConnections);
     return (await this.getWhatsAppConnectionByBusinessId(connection.business_id))!;
+  }
+
+  public async deleteWhatsAppConnectionByBusinessId(businessId: string): Promise<boolean> {
+    if (!businessId) return false;
+    this.ensureDatabaseReady();
+
+    if (this.isUsingFirestore()) {
+      try {
+        const snap = await firestore!
+          .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
+          .where('businessId', '==', businessId)
+          .get();
+        for (const doc of snap.docs) {
+          await doc.ref.delete();
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Firestore deleteWhatsAppConnectionByBusinessId error:', err?.message || err);
+      }
+    }
+
+    this.mem.whatsappConnections = this.mem.whatsappConnections.filter((w) => w.business_id !== businessId);
+    saveWaConnectionsToFile(this.mem.whatsappConnections);
+    return true;
   }
 
   // --- AI Settings ---
