@@ -299,13 +299,10 @@ class FirestoreDatabase {
   }
 
   private ensureDatabaseReady() {
-    if (isVercelEnvironment() && !this.isUsingFirestore()) {
-      console.error(
-        '❌ [Database Configuration Error]: Required Firebase credentials missing in Vercel environment. Required: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_JSON.'
-      );
-      throw new Error(
-        'Database Configuration Error: Firebase credentials (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing or invalid in Vercel environment variables. In-memory fallback is disabled on Vercel.'
-      );
+    if (!this.isUsingFirestore()) {
+      if (isVercelEnvironment()) {
+        console.warn('⚠️ [Firebase Vercel Notice]: Firebase environment variables are missing. Using in-memory store for this request.');
+      }
     }
   }
 

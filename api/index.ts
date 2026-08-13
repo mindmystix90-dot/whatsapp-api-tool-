@@ -23,9 +23,7 @@ export default async function handler(req: any, res: any) {
       res.setHeader('Content-Type', 'application/json');
     }
 
-    const rawUrl = req.url || '';
     const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-original-url']) : null;
-
     if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
       req.url = forwardedUri;
     }
@@ -36,12 +34,31 @@ export default async function handler(req: any, res: any) {
 
     await Promise.race([
       appReady,
-      new Promise((resolve) => setTimeout(resolve, 500))
+      new Promise((resolve) => setTimeout(resolve, 200))
     ]).catch(() => {});
 
-    return await new Promise((resolve) => {
-      res.on('finish', resolve);
-      res.on('close', resolve);
+    return new Promise<void>((resolve) => {
+      let isResolved = false;
+      const done = () => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve();
+        }
+      };
+
+      res.on('finish', done);
+      res.on('close', done);
+      res.on('end', done);
+
+      // Wrap res.end to guarantee promise resolution when response is sent
+      const origEnd = res.end;
+      if (typeof origEnd === 'function') {
+        res.end = function (this: any, ...args: any[]) {
+          const result = origEnd.apply(this, args);
+          done();
+          return result;
+        };
+      }
 
       app(req, res, (err: any) => {
         if (err && !res.headersSent) {
@@ -51,8 +68,12 @@ export default async function handler(req: any, res: any) {
             details: err?.message || String(err)
           });
         }
-        resolve(null);
+        done();
       });
+
+      if (res.writableEnded || res.finished || res.headersSent) {
+        done();
+      }
     });
   } catch (err: any) {
     console.error('[VERCEL] Top-Level Catch:', err?.message || err);
