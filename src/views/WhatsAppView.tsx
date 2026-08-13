@@ -158,7 +158,12 @@ export const WhatsAppView: React.FC = () => {
       const res = await fetchWithAuth('/api/whatsapp/send-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientPhone: testPhone.trim(), messageBody: testText.trim() })
+        body: JSON.stringify({
+          recipientPhone: testPhone.trim(),
+          messageBody: testText.trim(),
+          phone_number_id: formData.phone_number_id,
+          access_token: formData.access_token
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {

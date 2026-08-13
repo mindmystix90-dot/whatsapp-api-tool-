@@ -1,50 +1,18 @@
-import { sendWhatsAppTextMessage } from '../../server/whatsapp.js';
-import { db } from '../../server/db.js';
-import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'fishcatch_super_secret_jwt_key_2026';
-
-function isPersonalMode(): boolean {
-  return process.env.PERSONAL_MODE !== 'false';
-}
-
 export default async function handler(req: any, res: any) {
-  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    return res.status(200).json({ ok: true });
+  }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: `Method ${req.method} not allowed` });
+    return res.status(405).json({ success: false, error: `Method ${req.method} not allowed. Use POST.` });
   }
 
   try {
-    let user: any = null;
-    const authHeader = req.headers?.['authorization'] || req.headers?.['Authorization'];
-    const token = authHeader && typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, JWT_SECRET) as any;
-        if (decoded?.id) {
-          user = await db.findUserById(decoded.id);
-        }
-      } catch (e) {}
-    }
-
-    if (!user && isPersonalMode()) {
-      user = {
-        id: 'user_admin_platform',
-        email: 'admin@fishcatch.io',
-        name: 'Fishcatch Personal Admin',
-        role: 'admin',
-        business_id: 'bus_admin_platform'
-      };
-    }
-
-    if (!user) {
-      return res.status(401).json({ error: 'Authentication token required' });
-    }
-
-    const businessId = user.business_id || 'bus_admin_platform';
-
     let body = req.body || {};
     if (typeof body === 'string' && body.trim()) {
       try {
@@ -52,32 +20,56 @@ export default async function handler(req: any, res: any) {
       } catch {}
     }
 
-    const { recipientPhone, messageBody } = body;
+    const { recipientPhone, messageBody, phone_number_id, access_token } = body;
+
     if (!recipientPhone || !messageBody) {
-      return res.status(400).json({ error: 'Recipient phone number and message text are required.' });
+      return res.status(400).json({
+        success: false,
+        error: 'Recipient phone number and message text are required.'
+      });
     }
 
-    const connection = await db.getWhatsAppConnectionByBusinessId(businessId);
-    if (!connection || connection.status !== 'Connected') {
-      return res.status(400).json({ error: 'WhatsApp is not connected. Please verify credentials first.' });
+    if (!phone_number_id || !access_token || access_token.includes('••••')) {
+      return res.status(400).json({
+        success: false,
+        error: 'WhatsApp is not connected or missing credentials. Please test credentials first.'
+      });
     }
 
-    const sendResult = await sendWhatsAppTextMessage(connection, recipientPhone, messageBody);
+    const cleanPhoneId = encodeURIComponent(phone_number_id.toString().trim());
+    const metaUrl = `https://graph.facebook.com/v21.0/${cleanPhoneId}/messages`;
 
-    if (sendResult.success) {
+    const metaRes = await fetch(metaUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${access_token.toString().trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: recipientPhone.toString().trim(),
+        type: 'text',
+        text: { body: messageBody.toString() }
+      })
+    });
+
+    const metaData = await metaRes.json().catch(() => ({}));
+
+    if (metaRes.ok && metaData.messages?.[0]?.id) {
       return res.status(200).json({
         success: true,
-        wa_message_id: sendResult.wa_message_id,
+        wa_message_id: metaData.messages[0].id,
         message: `Test message sent successfully to ${recipientPhone}`
       });
     } else {
+      const errorMsg = metaData?.error?.message || `Meta Graph API returned HTTP ${metaRes.status}`;
       return res.status(400).json({
         success: false,
-        error: sendResult.error
+        error: errorMsg
       });
     }
   } catch (err: any) {
-    console.error('❌ Exception in /api/whatsapp/send-test Vercel handler:', err?.message || err);
+    console.error('[STANDALONE /api/whatsapp/send-test ERROR]:', err?.message || err);
     return res.status(500).json({
       success: false,
       error: `Failed to send test message: ${err?.message || String(err)}`
