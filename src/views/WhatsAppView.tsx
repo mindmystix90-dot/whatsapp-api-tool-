@@ -105,8 +105,25 @@ export const WhatsAppView: React.FC = () => {
     setVerifyMsg(null);
 
     try {
-      const res = await fetchWithAuth('/api/whatsapp/test', { method: 'POST' });
-      const data = await res.json();
+      const res = await fetchWithAuth('/api/whatsapp/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch {
+          const rawText = await res.text();
+          data = { error: rawText || `HTTP ${res.status} returned non-JSON response` };
+        }
+      } else {
+        const rawText = await res.text();
+        data = { error: rawText || `HTTP ${res.status} returned non-JSON response` };
+      }
 
       if (res.ok && data.success) {
         setVerifyMsg({

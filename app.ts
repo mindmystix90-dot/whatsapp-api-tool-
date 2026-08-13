@@ -317,124 +317,185 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
   });
 
   app.post('/api/whatsapp/config', authenticateToken, async (req: AuthenticatedRequest, res) => {
-    const { meta_app_id, waba_id, phone_number_id, access_token, webhook_verify_token } = req.body;
+    try {
+      const { meta_app_id, waba_id, phone_number_id, access_token, webhook_verify_token } = req.body || {};
 
-    let existing = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
+      let existing = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
 
-    // Keep existing access token if user provided masked token or left empty
-    let tokenToSave = access_token;
-    if (!tokenToSave || tokenToSave.includes('••••')) {
-      tokenToSave = existing?.access_token || '';
+      // Keep existing access token if user provided masked token or left empty
+      let tokenToSave = access_token;
+      if (!tokenToSave || tokenToSave.includes('••••')) {
+        tokenToSave = existing?.access_token || '';
+      }
+
+      const updatedConn = await db.upsertWhatsAppConnection({
+        id: existing?.id || `wa_${req.user!.business_id}`,
+        business_id: req.user!.business_id,
+        meta_app_id: meta_app_id ?? existing?.meta_app_id ?? '',
+        waba_id: waba_id ?? existing?.waba_id ?? '',
+        phone_number_id: phone_number_id ?? existing?.phone_number_id ?? '',
+        phone_number: existing?.phone_number || '',
+        display_name: existing?.display_name || '',
+        access_token: tokenToSave,
+        webhook_verify_token: webhook_verify_token || existing?.webhook_verify_token || 'fishcatch_verify_token_123',
+        status: existing?.status || 'Not Connected',
+        last_verified_at: existing?.last_verified_at || null,
+        error_message: existing?.error_message || null,
+        last_webhook_received_at: existing?.last_webhook_received_at || null,
+        coexistence_enabled: existing?.coexistence_enabled || false,
+        coexistence_mode: existing?.coexistence_mode || 'manual',
+        safety_status: existing?.safety_status || 'GREEN',
+        safety_paused: existing?.safety_paused || false,
+        created_at: existing?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      const maskedConnection = {
+        ...updatedConn,
+        access_token: updatedConn.access_token ? '••••••••••••••••' : ''
+      };
+
+      return res.json({ connection: maskedConnection });
+    } catch (err: any) {
+      console.error('❌ Exception in /api/whatsapp/config:', err);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to save configuration: ${err.message || String(err)}`
+      });
     }
-
-    const updatedConn = await db.upsertWhatsAppConnection({
-      id: existing?.id || `wa_${req.user!.business_id}`,
-      business_id: req.user!.business_id,
-      meta_app_id: meta_app_id ?? existing?.meta_app_id ?? '',
-      waba_id: waba_id ?? existing?.waba_id ?? '',
-      phone_number_id: phone_number_id ?? existing?.phone_number_id ?? '',
-      phone_number: existing?.phone_number || '',
-      display_name: existing?.display_name || '',
-      access_token: tokenToSave,
-      webhook_verify_token: webhook_verify_token || existing?.webhook_verify_token || 'fishcatch_verify_token_123',
-      status: existing?.status || 'Not Connected',
-      last_verified_at: existing?.last_verified_at || null,
-      error_message: existing?.error_message || null,
-      last_webhook_received_at: existing?.last_webhook_received_at || null,
-      coexistence_enabled: existing?.coexistence_enabled || false,
-      coexistence_mode: existing?.coexistence_mode || 'manual',
-      safety_status: existing?.safety_status || 'GREEN',
-      safety_paused: existing?.safety_paused || false,
-      created_at: existing?.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    });
-
-    const maskedConnection = {
-      ...updatedConn,
-      access_token: updatedConn.access_token ? '••••••••••••••••' : ''
-    };
-
-    res.json({ connection: maskedConnection });
   });
 
   app.post('/api/whatsapp/test', authenticateToken, async (req: AuthenticatedRequest, res) => {
-    const connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
-    if (!connection) {
-      return res.status(400).json({ error: 'No WhatsApp connection setup found.' });
-    }
+    try {
+      console.log('🔍 [/api/whatsapp/test] Incoming body:', req.body);
+      let phoneNumberId = req.body?.phone_number_id || req.body?.phoneNumberId;
+      let accessToken = req.body?.access_token || req.body?.accessToken;
+      let metaAppId = req.body?.meta_app_id || req.body?.metaAppId;
+      let wabaId = req.body?.waba_id || req.body?.wabaId;
+      let webhookVerifyToken = req.body?.webhook_verify_token || req.body?.webhookVerifyToken;
 
-    if (!connection.phone_number_id || !connection.access_token) {
-      await db.upsertWhatsAppConnection({
-        ...connection,
-        status: 'Not Connected',
-        error_message: 'Phone Number ID and Access Token are required to connect.'
-      });
-      return res.status(400).json({
+      let connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
+      console.log('🔍 [/api/whatsapp/test] Stored connection:', connection ? { id: connection.id, phone_number_id: connection.phone_number_id, has_access_token: Boolean(connection.access_token) } : 'NONE');
+
+      // If access_token provided in request is empty or masked '••••', use stored token from DB
+      if (!accessToken || accessToken.includes('••••')) {
+        accessToken = connection?.access_token;
+      }
+      if (!phoneNumberId) {
+        phoneNumberId = connection?.phone_number_id;
+      }
+      if (!metaAppId) {
+        metaAppId = connection?.meta_app_id;
+      }
+      if (!wabaId) {
+        wabaId = connection?.waba_id;
+      }
+      if (!webhookVerifyToken) {
+        webhookVerifyToken = connection?.webhook_verify_token;
+      }
+
+      console.log('🔍 [/api/whatsapp/test] Resolved credentials:', { phoneNumberId, hasAccessToken: Boolean(accessToken) });
+
+      if (!phoneNumberId || !accessToken || accessToken.includes('••••')) {
+        if (connection) {
+          await db.upsertWhatsAppConnection({
+            ...connection,
+            status: 'Not Connected',
+            error_message: 'Phone Number ID and Access Token are required to connect.'
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          status: 'Not Connected',
+          error: 'Phone Number ID and Access Token are required.'
+        });
+      }
+
+      const verification = await verifyWhatsAppCredentials(phoneNumberId, accessToken);
+
+      const connToSave: WhatsAppConnection = {
+        id: connection?.id || `wa_${req.user!.business_id}`,
+        business_id: req.user!.business_id,
+        meta_app_id: metaAppId || connection?.meta_app_id || '',
+        waba_id: wabaId || connection?.waba_id || '',
+        phone_number_id: phoneNumberId,
+        phone_number: verification.display_phone_number || connection?.phone_number || '',
+        display_name: verification.display_name || connection?.display_name || '',
+        access_token: accessToken,
+        webhook_verify_token: webhookVerifyToken || connection?.webhook_verify_token || 'fishcatch_verify_token_123',
+        status: verification.success ? 'Connected' : 'Connection Error',
+        last_verified_at: verification.success ? new Date().toISOString() : connection?.last_verified_at || null,
+        error_message: verification.success ? null : (verification.error || 'Failed to verify WhatsApp credentials'),
+        last_webhook_received_at: connection?.last_webhook_received_at || null,
+        coexistence_enabled: connection?.coexistence_enabled || false,
+        coexistence_mode: connection?.coexistence_mode || 'manual',
+        quality_rating: verification.quality_rating || connection?.quality_rating || 'GREEN',
+        safety_status: connection?.safety_status || 'GREEN',
+        safety_paused: connection?.safety_paused || false,
+        created_at: connection?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const updated = await db.upsertWhatsAppConnection(connToSave);
+
+      if (verification.success) {
+        return res.json({
+          success: true,
+          status: 'Connected',
+          display_name: verification.display_name,
+          phone_number: verification.display_phone_number,
+          quality_rating: verification.quality_rating,
+          connection: { ...updated, access_token: '••••••••••••••••' }
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          status: 'Connection Error',
+          error: verification.error,
+          connection: { ...updated, access_token: '••••••••••••••••' }
+        });
+      }
+    } catch (err: any) {
+      console.error('❌ Exception in /api/whatsapp/test route:', err);
+      return res.status(500).json({
         success: false,
-        status: 'Not Connected',
-        error: 'Phone Number ID and Access Token are required.'
-      });
-    }
-
-    const verification = await verifyWhatsAppCredentials(connection.phone_number_id, connection.access_token);
-
-    if (verification.success) {
-      const updated = await db.upsertWhatsAppConnection({
-        ...connection,
-        status: 'Connected',
-        display_name: verification.display_name || 'Meta WhatsApp Business',
-        phone_number: verification.display_phone_number || connection.phone_number || 'Connected',
-        last_verified_at: new Date().toISOString(),
-        error_message: null
-      });
-
-      return res.json({
-        success: true,
-        status: 'Connected',
-        display_name: verification.display_name,
-        phone_number: verification.display_phone_number,
-        quality_rating: verification.quality_rating,
-        connection: { ...updated, access_token: '••••••••••••••••' }
-      });
-    } else {
-      const updated = await db.upsertWhatsAppConnection({
-        ...connection,
-        status: 'Connection Error',
-        error_message: verification.error || 'Failed to verify WhatsApp Graph API credentials'
-      });
-
-      return res.status(400).json({
-        success: false,
-        status: 'Connection Error',
-        error: verification.error,
-        connection: { ...updated, access_token: '••••••••••••••••' }
+        status: 'Error',
+        error: `Server error during verification: ${err.message || String(err)}`
       });
     }
   });
 
   app.post('/api/whatsapp/send-test', authenticateToken, async (req: AuthenticatedRequest, res) => {
-    const { recipientPhone, messageBody } = req.body;
-    if (!recipientPhone || !messageBody) {
-      return res.status(400).json({ error: 'Recipient phone number and message text are required.' });
-    }
+    try {
+      const { recipientPhone, messageBody } = req.body || {};
+      if (!recipientPhone || !messageBody) {
+        return res.status(400).json({ error: 'Recipient phone number and message text are required.' });
+      }
 
-    const connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
-    if (!connection || connection.status !== 'Connected') {
-      return res.status(400).json({ error: 'WhatsApp is not connected. Please verify credentials first.' });
-    }
+      const connection = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
+      if (!connection || connection.status !== 'Connected') {
+        return res.status(400).json({ error: 'WhatsApp is not connected. Please verify credentials first.' });
+      }
 
-    const sendResult = await sendWhatsAppTextMessage(connection, recipientPhone, messageBody);
+      const sendResult = await sendWhatsAppTextMessage(connection, recipientPhone, messageBody);
 
-    if (sendResult.success) {
-      return res.json({
-        success: true,
-        wa_message_id: sendResult.wa_message_id,
-        message: `Test message sent successfully to ${recipientPhone}`
-      });
-    } else {
-      return res.status(400).json({
+      if (sendResult.success) {
+        return res.json({
+          success: true,
+          wa_message_id: sendResult.wa_message_id,
+          message: `Test message sent successfully to ${recipientPhone}`
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: sendResult.error
+        });
+      }
+    } catch (err: any) {
+      console.error('❌ Exception in /api/whatsapp/send-test:', err);
+      return res.status(500).json({
         success: false,
-        error: sendResult.error
+        error: `Failed to send test message: ${err.message || String(err)}`
       });
     }
   });
