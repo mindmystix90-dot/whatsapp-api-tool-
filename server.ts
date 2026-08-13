@@ -31,111 +31,125 @@ const PORT = 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-async function setupApp() {
-  // Seed default admin user on boot
-  await initAdminUser();
+// Seed admin user in background (non-blocking)
+export const appReady = initAdminUser().catch((err) => {
+  console.warn('⚠️ Non-fatal background admin seed warning:', err?.message || err);
+});
 
-  // ==========================================
-  // META WHATSAPP WEBHOOK ROUTES (PUBLIC)
-  // Registering both /api/whatsapp/webhook and /api/webhook/whatsapp
-  // ==========================================
-  app.get('/api/whatsapp/webhook', handleWebhookVerification);
-  app.post('/api/whatsapp/webhook', handleWebhookEvent);
-  app.get('/api/webhook/whatsapp', handleWebhookVerification);
-  app.post('/api/webhook/whatsapp', handleWebhookEvent);
+// ==========================================
+// META WHATSAPP WEBHOOK ROUTES (PUBLIC)
+// Registering both /api/whatsapp/webhook and /api/webhook/whatsapp
+// ==========================================
+app.get('/api/whatsapp/webhook', handleWebhookVerification);
+app.post('/api/whatsapp/webhook', handleWebhookEvent);
+app.get('/api/webhook/whatsapp', handleWebhookVerification);
+app.post('/api/webhook/whatsapp', handleWebhookEvent);
 
-  // ==========================================
-  // AUTHENTICATION ROUTES
-  // ==========================================
-  app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
-    try {
-      const { email, password, name, businessName } = req.body;
+// ==========================================
+// AUTHENTICATION ROUTES
+// ==========================================
+app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
+  try {
+    const { email, password, name, businessName } = req.body;
+    console.log('[AUTH] Registration request received for email:', email ? email.trim() : 'MISSING');
 
-      if (!email || !password || !name) {
-        return res.status(400).json({ error: 'Email, name, and password are required' });
-      }
-
-      const existing = await db.findUserByEmail(email);
-      if (existing) {
-        return res.status(400).json({ error: 'An account with this email already exists' });
-      }
-
-      const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const businessId = `bus_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const passwordHash = await hashPassword(password);
-
-      const newUser: User = {
-        id: userId,
-        email: email.trim(),
-        name: name.trim(),
-        role: 'user',
-        business_id: businessId,
-        created_at: new Date().toISOString()
-      };
-
-      await db.createUser(newUser, passwordHash);
-
-      // Create associated Business profile
-      await db.createBusiness({
-        id: businessId,
-        user_id: userId,
-        name: businessName || `${name}'s Business`,
-        description: '',
-        products_services: '',
-        prices: '',
-        faqs: '',
-        business_hours: '',
-        location: '',
-        contact_info: email,
-        additional_info: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
-      // Create default AI Settings
-      await db.upsertAISettings({
-        id: `ai_${businessId}`,
-        business_id: businessId,
-        enabled: true,
-        agent_name: 'Lead AI Assistant',
-        system_instructions: 'Help customers, answer product questions, and guide them to convert.',
-        tone: 'Friendly & Professional',
-        language_preference: 'Match Customer Language',
-        human_handoff_rules: 'Handoff if customer requests human agent or complex issue.',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
-      // Create default WhatsApp Connection record
-      await db.upsertWhatsAppConnection({
-        id: `wa_${businessId}`,
-        business_id: businessId,
-        meta_app_id: '',
-        waba_id: '',
-        phone_number_id: '',
-        phone_number: '',
-        display_name: '',
-        access_token: '',
-        webhook_verify_token: process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123',
-        status: 'Not Connected',
-        last_verified_at: null,
-        error_message: null,
-        last_webhook_received_at: null,
-        coexistence_enabled: false,
-        coexistence_mode: 'manual',
-        safety_status: 'GREEN',
-        safety_paused: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
-      const token = generateToken(newUser);
-      return res.json({ token, user: newUser });
-    } catch (err: any) {
-      console.error('Signup error:', err);
-      return res.status(500).json({ error: 'Failed to create user account' });
+    if (!email || !password || !name) {
+      console.log('[AUTH] Registration failed: Missing required fields');
+      return res.status(400).json({ error: 'Email, name, and password are required' });
     }
-  });
+
+    console.log('[AUTH] Checking for existing user in database...');
+    const existing = await db.findUserByEmail(email);
+    if (existing) {
+      console.log('[AUTH] Registration failed: User email already exists');
+      return res.status(400).json({ error: 'An account with this email already exists' });
+    }
+
+    const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const businessId = `bus_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    console.log('[AUTH] Hashing password for new user:', userId);
+    const passwordHash = await hashPassword(password);
+
+    const newUser: User = {
+      id: userId,
+      email: email.trim(),
+      name: name.trim(),
+      role: 'user',
+      business_id: businessId,
+      created_at: new Date().toISOString()
+    };
+
+    console.log('[AUTH] Saving new user to database...');
+    await db.createUser(newUser, passwordHash);
+
+    // Create associated Business profile
+    console.log('[AUTH] Creating business profile for:', businessId);
+    await db.createBusiness({
+      id: businessId,
+      user_id: userId,
+      name: businessName || `${name}'s Business`,
+      description: '',
+      products_services: '',
+      prices: '',
+      faqs: '',
+      business_hours: '',
+      location: '',
+      contact_info: email,
+      additional_info: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    // Create default AI Settings
+    console.log('[AUTH] Creating default AI settings...');
+    await db.upsertAISettings({
+      id: `ai_${businessId}`,
+      business_id: businessId,
+      enabled: true,
+      agent_name: 'Lead AI Assistant',
+      system_instructions: 'Help customers, answer product questions, and guide them to convert.',
+      tone: 'Friendly & Professional',
+      language_preference: 'Match Customer Language',
+      human_handoff_rules: 'Handoff if customer requests human agent or complex issue.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    // Create default WhatsApp Connection record
+    console.log('[AUTH] Creating default WhatsApp connection record...');
+    await db.upsertWhatsAppConnection({
+      id: `wa_${businessId}`,
+      business_id: businessId,
+      meta_app_id: '',
+      waba_id: '',
+      phone_number_id: '',
+      phone_number: '',
+      display_name: '',
+      access_token: '',
+      webhook_verify_token: process.env.META_DEFAULT_WEBHOOK_VERIFY_TOKEN || 'fishcatch_verify_token_123',
+      status: 'Not Connected',
+      last_verified_at: null,
+      error_message: null,
+      last_webhook_received_at: null,
+      coexistence_enabled: false,
+      coexistence_mode: 'manual',
+      safety_status: 'GREEN',
+      safety_paused: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+    console.log('[AUTH] User registration completed successfully for:', userId);
+    const token = generateToken(newUser);
+    return res.json({ token, user: newUser });
+  } catch (err: any) {
+    console.error('[AUTH] Registration exception:', err);
+    return res.status(500).json({
+      error: 'Failed to create user account',
+      details: err?.message || String(err)
+    });
+  }
+});
 
   app.post('/api/auth/login', async (req, res) => {
     try {
@@ -943,11 +957,14 @@ async function setupApp() {
   // ==========================================
   if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== 'production') {
-      const vite = await createViteServer({
+      createViteServer({
         server: { middlewareMode: true },
         appType: 'spa'
+      }).then((vite) => {
+        app.use(vite.middlewares);
+      }).catch((err) => {
+        console.error('Failed to create Vite dev server:', err);
       });
-      app.use(vite.middlewares);
     } else {
       const distPath = path.join(process.cwd(), 'dist');
       app.use(express.static(distPath));
@@ -956,9 +973,6 @@ async function setupApp() {
       });
     }
   }
-}
-
-export const appReady = setupApp();
 
 if (!process.env.VERCEL) {
   appReady.then(() => {

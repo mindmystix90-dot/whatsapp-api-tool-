@@ -34,52 +34,61 @@ export const COLLECTIONS = {
 
 let isFirestoreConfigured = false;
 
+function formatPrivateKey(key: string | undefined): string | undefined {
+  if (!key) return undefined;
+  let formatted = key.trim();
+  if (formatted.startsWith('"') && formatted.endsWith('"')) {
+    formatted = formatted.substring(1, formatted.length - 1);
+  }
+  if (formatted.startsWith("'") && formatted.endsWith("'")) {
+    formatted = formatted.substring(1, formatted.length - 1);
+  }
+  return formatted.replace(/\\n/g, '\n');
+}
+
 function initFirebaseAdmin(): App | null {
   if (getApps().length > 0) {
     isFirestoreConfigured = true;
     return getApps()[0]!;
   }
 
-  // Check firebase-applet-config.json
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      const raw = fs.readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (parsed.projectId) {
-        const app = initializeApp({ projectId: parsed.projectId });
-        isFirestoreConfigured = true;
-        console.log(`🔥 Firebase Admin initialized with applet config: ${parsed.projectId}`);
-        return app;
-      }
-    } catch (e) {
-      console.warn('⚠️ Could not parse firebase-applet-config.json:', e);
-    }
-  }
-
+  // 1. Check FIREBASE_SERVICE_ACCOUNT_JSON
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (serviceAccountJson) {
     try {
-      const parsed = typeof serviceAccountJson === 'string' ? JSON.parse(serviceAccountJson) : serviceAccountJson;
-      const app = initializeApp({
-        credential: cert(parsed),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${parsed.project_id}.appspot.com`
-      });
-      isFirestoreConfigured = true;
-      console.log(`🔥 Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON (${parsed.project_id})`);
-      return app;
-    } catch (e) {
-      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e);
+      let raw = serviceAccountJson.trim();
+      if (!raw.startsWith('{') && !raw.startsWith('"')) {
+        try {
+          raw = Buffer.from(raw, 'base64').toString('utf-8');
+        } catch {}
+      }
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const pId = parsed.project_id || parsed.projectId;
+      const cEmail = parsed.client_email || parsed.clientEmail;
+      const pKey = formatPrivateKey(parsed.private_key || parsed.privateKey);
+
+      if (pId && cEmail && pKey) {
+        const app = initializeApp({
+          credential: cert({
+            projectId: pId,
+            clientEmail: cEmail,
+            privateKey: pKey
+          }),
+          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
+        });
+        isFirestoreConfigured = true;
+        console.log(`🔥 Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON (${pId})`);
+        return app;
+      }
+    } catch (e: any) {
+      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e?.message || e);
     }
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID;
+  // 2. Check Individual Environment Variables
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-
-  if (privateKey) {
-    privateKey = privateKey.replace(/\\n/g, '\n');
-  }
+  const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
 
   if (projectId && clientEmail && privateKey) {
     try {
@@ -92,27 +101,65 @@ function initFirebaseAdmin(): App | null {
         storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`
       });
       isFirestoreConfigured = true;
-      console.log(`🔥 Firebase Admin initialized via environment credentials (${projectId})`);
+      console.log(`🔥 Firebase Admin initialized via individual env credentials (${projectId})`);
       return app;
-    } catch (e) {
-      console.error('❌ Failed to initialize Firebase Admin with env vars:', e);
+    } catch (e: any) {
+      console.error('❌ Failed to initialize Firebase Admin with env vars:', e?.message || e);
     }
   }
 
-  if (projectId || process.env.GCLOUD_PROJECT) {
+  // 3. Check firebase-applet-config.json
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      const pId = parsed.projectId || parsed.project_id;
+      const cEmail = parsed.clientEmail || parsed.client_email;
+      const pKey = formatPrivateKey(parsed.privateKey || parsed.private_key);
+
+      if (pId && cEmail && pKey) {
+        const app = initializeApp({
+          credential: cert({
+            projectId: pId,
+            clientEmail: cEmail,
+            privateKey: pKey
+          }),
+          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
+        });
+        isFirestoreConfigured = true;
+        console.log(`🔥 Firebase Admin initialized via firebase-applet-config.json (${pId})`);
+        return app;
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Could not parse firebase-applet-config.json:', e?.message || e);
+    }
+  }
+
+  // 4. GCP Container ADC Check (Cloud Run / App Engine with ADC)
+  // CRITICAL: NEVER perform ADC metadata-server discovery on Vercel
+  const isVercel = Boolean(process.env.VERCEL);
+  const isGCPContainer = Boolean(
+    !isVercel && (process.env.K_SERVICE || process.env.FUNCTION_NAME || process.env.CLOUD_RUN_JOB)
+  );
+
+  if (isGCPContainer && (projectId || process.env.GCLOUD_PROJECT)) {
     try {
       const app = initializeApp({
         projectId: projectId || process.env.GCLOUD_PROJECT
       });
       isFirestoreConfigured = true;
-      console.log(`🔥 Firebase Admin initialized with default project (${projectId || process.env.GCLOUD_PROJECT})`);
+      console.log(`🔥 Firebase Admin initialized with GCP container ADC (${projectId || process.env.GCLOUD_PROJECT})`);
       return app;
-    } catch (e) {
-      console.warn('⚠️ Default Firebase Admin init skipped:', e);
+    } catch (e: any) {
+      console.warn('⚠️ GCP default Firebase Admin init skipped:', e?.message || e);
     }
   }
 
-  console.warn('⚠️ Firebase credentials not configured. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_JSON.');
+  console.error(
+    '❌ [Firebase Admin Init] Required service account credentials missing or incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY (or FIREBASE_SERVICE_ACCOUNT_JSON).'
+  );
+  isFirestoreConfigured = false;
   return null;
 }
 
@@ -121,7 +168,11 @@ export const firestore: Firestore | null = firebaseApp ? getFirestore(firebaseAp
 export const firebaseAuth: Auth | null = firebaseApp ? getAuth(firebaseApp) : null;
 export const firebaseStorage: Storage | null = firebaseApp ? getStorage(firebaseApp) : null;
 
-// Ephemeral memory fallback store if Firebase Admin credentials are not provided yet
+function isProduction(): boolean {
+  return Boolean(process.env.VERCEL || process.env.NODE_ENV === 'production');
+}
+
+// Ephemeral memory fallback store ONLY for local development when credentials are not configured
 interface EphemeralStore {
   users: User[];
   passwords: Record<string, string>;
@@ -151,9 +202,21 @@ class FirestoreDatabase {
     return Boolean(firestore && isFirestoreConfigured);
   }
 
+  private ensureDatabaseReady() {
+    if (isProduction() && !this.isUsingFirestore()) {
+      console.error(
+        '❌ [Database Configuration Error]: Required Firebase credentials missing in production/Vercel. Required: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY or FIREBASE_SERVICE_ACCOUNT_JSON.'
+      );
+      throw new Error(
+        'Database Configuration Error: Firebase credentials (FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing or invalid in Vercel environment variables. In-memory fallback is disabled in production.'
+      );
+    }
+  }
+
   // --- Users & Passwords ---
   public async findUserByEmail(email: string): Promise<User | undefined> {
     if (!email) return undefined;
+    this.ensureDatabaseReady();
     const cleanEmail = email.trim().toLowerCase();
 
     if (this.isUsingFirestore()) {
@@ -180,6 +243,7 @@ class FirestoreDatabase {
 
   public async findUserById(id: string): Promise<User | undefined> {
     if (!id) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.USERS).doc(id).get();
@@ -199,6 +263,8 @@ class FirestoreDatabase {
   }
 
   public async getAllUsers(): Promise<User[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.USERS).get();
       return snap.docs.map((doc) => {
@@ -218,7 +284,9 @@ class FirestoreDatabase {
   }
 
   public async createUser(user: User, passwordHash: string): Promise<User> {
+    this.ensureDatabaseReady();
     const businessId = user.business_id;
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.USERS).doc(user.id).set({
         id: user.id,
@@ -239,6 +307,8 @@ class FirestoreDatabase {
   }
 
   public async getPasswordHash(userId: string): Promise<string | undefined> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.USERS).doc(userId).get();
       if (!doc.exists) return undefined;
@@ -251,6 +321,7 @@ class FirestoreDatabase {
   // --- Businesses ---
   public async getBusinessById(id: string): Promise<Business | undefined> {
     if (!id) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.BUSINESSES).doc(id).get();
@@ -278,6 +349,7 @@ class FirestoreDatabase {
 
   public async getBusinessByUserId(userId: string): Promise<Business | undefined> {
     if (!userId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -309,6 +381,8 @@ class FirestoreDatabase {
   }
 
   public async getAllBusinesses(): Promise<Business[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.BUSINESSES).get();
       return snap.docs.map((doc) => {
@@ -335,6 +409,8 @@ class FirestoreDatabase {
   }
 
   public async createBusiness(business: Business): Promise<Business> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.BUSINESSES).doc(business.id).set({
         id: business.id,
@@ -360,6 +436,8 @@ class FirestoreDatabase {
   }
 
   public async updateBusiness(id: string, updates: Partial<Business>): Promise<Business | undefined> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const docRef = firestore!.collection(COLLECTIONS.BUSINESSES).doc(id);
       const existingDoc = await docRef.get();
@@ -396,6 +474,7 @@ class FirestoreDatabase {
   // --- WhatsApp Connections ---
   public async getWhatsAppConnectionByBusinessId(businessId: string): Promise<WhatsAppConnection | undefined> {
     if (!businessId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -436,6 +515,7 @@ class FirestoreDatabase {
 
   public async getWhatsAppConnectionByPhoneNumberId(phoneNumberId: string): Promise<WhatsAppConnection | undefined> {
     if (!phoneNumberId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -475,6 +555,8 @@ class FirestoreDatabase {
   }
 
   public async getAllWhatsAppConnections(): Promise<WhatsAppConnection[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.WHATSAPP_CONNECTIONS).get();
       return snap.docs.map((doc) => {
@@ -509,6 +591,7 @@ class FirestoreDatabase {
   }
 
   public async upsertWhatsAppConnection(connection: WhatsAppConnection): Promise<WhatsAppConnection> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     const docId = connection.id || `wa_${connection.business_id}`;
 
@@ -558,6 +641,7 @@ class FirestoreDatabase {
   // --- AI Settings ---
   public async getAISettingsByBusinessId(businessId: string): Promise<AISettings | undefined> {
     if (!businessId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -586,6 +670,7 @@ class FirestoreDatabase {
   }
 
   public async upsertAISettings(settings: AISettings): Promise<AISettings> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     const docId = settings.id || `ai_${settings.business_id}`;
 
@@ -624,6 +709,7 @@ class FirestoreDatabase {
   // --- Customers ---
   public async getCustomerById(id: string): Promise<Customer | undefined> {
     if (!id) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.CUSTOMERS).doc(id).get();
@@ -651,6 +737,7 @@ class FirestoreDatabase {
 
   public async findCustomerByWaId(businessId: string, waId: string): Promise<Customer | undefined> {
     if (!businessId || !waId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -684,6 +771,7 @@ class FirestoreDatabase {
 
   public async getCustomersByBusinessId(businessId: string): Promise<Customer[]> {
     if (!businessId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -715,6 +803,8 @@ class FirestoreDatabase {
   }
 
   public async getAllCustomers(): Promise<Customer[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.CUSTOMERS).get();
       return snap.docs.map((doc) => {
@@ -741,6 +831,7 @@ class FirestoreDatabase {
   }
 
   public async createCustomer(customer: Customer): Promise<Customer> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.CUSTOMERS).doc(customer.id).set({
@@ -772,6 +863,8 @@ class FirestoreDatabase {
   }
 
   public async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | undefined> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const docRef = firestore!.collection(COLLECTIONS.CUSTOMERS).doc(id);
       const existing = await docRef.get();
@@ -803,6 +896,7 @@ class FirestoreDatabase {
   // --- Conversations ---
   public async getConversationsByBusinessId(businessId: string): Promise<Conversation[]> {
     if (!businessId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -844,6 +938,7 @@ class FirestoreDatabase {
 
   public async getConversationById(id: string): Promise<Conversation | undefined> {
     if (!id) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.CONVERSATIONS).doc(id).get();
@@ -875,6 +970,7 @@ class FirestoreDatabase {
 
   public async findConversationByCustomer(businessId: string, customerId: string): Promise<Conversation | undefined> {
     if (!businessId || !customerId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -891,6 +987,8 @@ class FirestoreDatabase {
   }
 
   public async createConversation(conv: Conversation): Promise<Conversation> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.CONVERSATIONS).doc(conv.id).set({
         id: conv.id,
@@ -912,6 +1010,8 @@ class FirestoreDatabase {
   }
 
   public async updateConversation(id: string, updates: Partial<Conversation>): Promise<Conversation | undefined> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const docRef = firestore!.collection(COLLECTIONS.CONVERSATIONS).doc(id);
       const existing = await docRef.get();
@@ -941,6 +1041,7 @@ class FirestoreDatabase {
   // --- Messages ---
   public async getMessagesByConversationId(conversationId: string): Promise<Message[]> {
     if (!conversationId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -972,6 +1073,8 @@ class FirestoreDatabase {
   }
 
   public async createMessage(message: Message): Promise<Message> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.MESSAGES).doc(message.id).set({
         id: message.id,
@@ -993,6 +1096,7 @@ class FirestoreDatabase {
 
   public async findMessageByWaId(waMessageId: string): Promise<Message | undefined> {
     if (!waMessageId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1022,6 +1126,7 @@ class FirestoreDatabase {
   // --- Leads ---
   public async getLeadsByBusinessId(businessId: string): Promise<Lead[]> {
     if (!businessId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1055,6 +1160,7 @@ class FirestoreDatabase {
 
   public async getLeadById(id: string): Promise<Lead | undefined> {
     if (!id) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const doc = await firestore!.collection(COLLECTIONS.LEADS).doc(id).get();
@@ -1079,6 +1185,7 @@ class FirestoreDatabase {
 
   public async findLeadByCustomer(businessId: string, customerId: string): Promise<Lead | undefined> {
     if (!businessId || !customerId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1108,6 +1215,8 @@ class FirestoreDatabase {
   }
 
   public async createLead(lead: Lead): Promise<Lead> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.LEADS).doc(lead.id).set({
         id: lead.id,
@@ -1129,6 +1238,8 @@ class FirestoreDatabase {
   }
 
   public async updateLeadStatus(id: string, status: LeadStatus): Promise<Lead | undefined> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const docRef = firestore!.collection(COLLECTIONS.LEADS).doc(id);
       const existing = await docRef.get();
@@ -1155,6 +1266,7 @@ class FirestoreDatabase {
   // --- Templates ---
   public async getTemplatesByBusinessId(businessId: string): Promise<any[]> {
     if (!businessId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1185,6 +1297,7 @@ class FirestoreDatabase {
   }
 
   public async createTemplate(template: any): Promise<any> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     const docId = template.id || `tmpl_${Date.now()}`;
 
@@ -1213,6 +1326,8 @@ class FirestoreDatabase {
   }
 
   public async deleteTemplate(id: string, businessId: string): Promise<boolean> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       await firestore!.collection(COLLECTIONS.TEMPLATES).doc(id).delete();
       return true;
@@ -1227,6 +1342,7 @@ class FirestoreDatabase {
   // --- Safety Settings ---
   public async getSafetySettingsByBusinessId(businessId: string): Promise<any | undefined> {
     if (!businessId) return undefined;
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1255,6 +1371,7 @@ class FirestoreDatabase {
   }
 
   public async upsertSafetySettings(settings: any): Promise<any> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     const docId = settings.id || `safety_${settings.business_id}`;
 
@@ -1289,6 +1406,7 @@ class FirestoreDatabase {
 
   // --- Admin Audit Logs ---
   public async createAdminAuditLog(log: any): Promise<any> {
+    this.ensureDatabaseReady();
     const now = new Date().toISOString();
     const docId = log.id || `audit_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -1313,6 +1431,8 @@ class FirestoreDatabase {
   }
 
   public async getAdminAuditLogs(): Promise<any[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.ADMIN_AUDIT_LOGS).get();
       return snap.docs
@@ -1340,6 +1460,7 @@ class FirestoreDatabase {
   // --- Global / Business Messages ---
   public async getMessagesByBusinessId(businessId: string): Promise<Message[]> {
     if (!businessId) return [];
+    this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
       const snap = await firestore!
@@ -1369,6 +1490,8 @@ class FirestoreDatabase {
   }
 
   public async getAllMessages(): Promise<Message[]> {
+    this.ensureDatabaseReady();
+
     if (this.isUsingFirestore()) {
       const snap = await firestore!.collection(COLLECTIONS.MESSAGES).get();
       return snap.docs.map((doc) => {
