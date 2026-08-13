@@ -15,7 +15,7 @@ import {
   AISettings,
   LeadStatus,
   WhatsAppConnectionStatus
-} from '../src/types.js';
+} from '../src/types';
 
 // Firestore Collection Names
 export const COLLECTIONS = {
@@ -40,86 +40,52 @@ function formatPrivateKey(key: string | undefined): string | undefined {
   if ((formatted.startsWith('"') && formatted.endsWith('"')) || (formatted.startsWith("'") && formatted.endsWith("'"))) {
     formatted = formatted.substring(1, formatted.length - 1).trim();
   }
+  // If base64 encoded
+  if (!formatted.includes('-----BEGIN PRIVATE KEY-----') && !formatted.includes('KEY')) {
+    try {
+      const decoded = Buffer.from(formatted, 'base64').toString('utf-8');
+      if (decoded.includes('-----BEGIN PRIVATE KEY-----')) {
+        formatted = decoded;
+      }
+    } catch {}
+  }
   return formatted.replace(/\\\\n/g, '\n').replace(/\\n/g, '\n');
 }
 
 function initFirebaseAdmin(): App | null {
-  if (getApps().length > 0) {
-    isFirestoreConfigured = true;
-    return getApps()[0]!;
-  }
-
-  // 1. Check FIREBASE_SERVICE_ACCOUNT_JSON
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (serviceAccountJson) {
-    try {
-      let raw = serviceAccountJson.trim();
-      if (!raw.startsWith('{') && !raw.startsWith('"')) {
-        try {
-          raw = Buffer.from(raw, 'base64').toString('utf-8');
-        } catch {}
-      }
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      const pId = parsed.project_id || parsed.projectId;
-      const cEmail = parsed.client_email || parsed.clientEmail;
-      const pKey = formatPrivateKey(parsed.private_key || parsed.privateKey);
-
-      if (pId && cEmail && pKey) {
-        const app = initializeApp({
-          credential: cert({
-            projectId: pId,
-            clientEmail: cEmail,
-            privateKey: pKey
-          }),
-          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
-        });
-        isFirestoreConfigured = true;
-        console.log(`🔥 Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON (${pId})`);
-        return app;
-      }
-    } catch (e: any) {
-      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e?.message || e);
-    }
-  }
-
-  // 2. Check Individual Environment Variables
-  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY);
-
-  if (projectId && clientEmail && privateKey) {
-    try {
-      const app = initializeApp({
-        credential: cert({
-          projectId,
-          clientEmail,
-          privateKey
-        }),
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`
-      });
+  try {
+    if (getApps().length > 0) {
       isFirestoreConfigured = true;
-      console.log(`🔥 Firebase Admin initialized via individual env credentials (${projectId})`);
-      return app;
-    } catch (e: any) {
-      console.error('❌ Failed to initialize Firebase Admin with env vars:', e?.message || e);
+      return getApps()[0]!;
     }
-  }
 
-  // 3. Check GOOGLE_APPLICATION_CREDENTIALS or local service account JSON files
-  const possiblePaths = [
-    process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    path.join(process.cwd(), 'serviceAccountKey.json'),
-    path.join(process.cwd(), 'service-account.json'),
-    path.join(process.cwd(), 'serviceAccount.json'),
-    path.join(process.cwd(), 'firebase-service-account.json'),
-    path.join(process.cwd(), 'firebase-applet-config.json')
-  ].filter((p): p is string => Boolean(p));
+    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const privateKeyRaw = process.env.FIREBASE_PRIVATE_KEY;
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-  for (const jsonPath of possiblePaths) {
-    if (fs.existsSync(jsonPath)) {
+    const privateKey = formatPrivateKey(privateKeyRaw);
+
+    console.log('🔍 [FIREBASE ENV DIAGNOSTICS]:', {
+      FIREBASE_PROJECT_ID: projectId ? `PRESENT (${projectId})` : 'MISSING',
+      FIREBASE_CLIENT_EMAIL: clientEmail ? `PRESENT (${clientEmail.substring(0, 5)}...)` : 'MISSING',
+      FIREBASE_PRIVATE_KEY: privateKeyRaw ? 'PRESENT' : 'MISSING',
+      privateKeyLength: privateKey ? privateKey.length : 0,
+      privateKeyHasBeginHeader: privateKey ? privateKey.includes('-----BEGIN PRIVATE KEY-----') : false,
+      privateKeyHasEndHeader: privateKey ? privateKey.includes('-----END PRIVATE KEY-----') : false,
+      hasServiceAccountJson: Boolean(serviceAccountJson)
+    });
+
+    // 1. Check FIREBASE_SERVICE_ACCOUNT_JSON
+    if (serviceAccountJson) {
       try {
-        const raw = fs.readFileSync(jsonPath, 'utf-8');
-        const parsed = JSON.parse(raw);
+        let raw = serviceAccountJson.trim();
+        if (!raw.startsWith('{') && !raw.startsWith('"')) {
+          try {
+            raw = Buffer.from(raw, 'base64').toString('utf-8');
+          } catch {}
+        }
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const pId = parsed.project_id || parsed.projectId;
         const cEmail = parsed.client_email || parsed.clientEmail;
         const pKey = formatPrivateKey(parsed.private_key || parsed.privateKey);
@@ -134,40 +100,101 @@ function initFirebaseAdmin(): App | null {
             storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
           });
           isFirestoreConfigured = true;
-          console.log(`🔥 Firebase Admin initialized via service account file (${path.basename(jsonPath)} / ${pId})`);
+          console.log(`🔥 Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON (${pId})`);
           return app;
         }
       } catch (e: any) {
-        console.warn(`⚠️ Could not parse service account file ${jsonPath}:`, e?.message || e);
+        console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', e?.message || e);
       }
     }
-  }
 
-  // 4. GCP Container ADC Check (Cloud Run / App Engine with ADC)
-  // CRITICAL: NEVER perform ADC metadata-server discovery on Vercel
-  const isVercel = Boolean(process.env.VERCEL);
-  const isGCPContainer = Boolean(
-    !isVercel && (process.env.K_SERVICE || process.env.FUNCTION_NAME || process.env.CLOUD_RUN_JOB)
-  );
-
-  if (isGCPContainer && (projectId || process.env.GCLOUD_PROJECT)) {
-    try {
-      const app = initializeApp({
-        projectId: projectId || process.env.GCLOUD_PROJECT
-      });
-      isFirestoreConfigured = true;
-      console.log(`🔥 Firebase Admin initialized with GCP container ADC (${projectId || process.env.GCLOUD_PROJECT})`);
-      return app;
-    } catch (e: any) {
-      console.warn('⚠️ GCP default Firebase Admin init skipped:', e?.message || e);
+    // 2. Check Individual Environment Variables
+    if (projectId && clientEmail && privateKey) {
+      try {
+        const app = initializeApp({
+          credential: cert({
+            projectId,
+            clientEmail,
+            privateKey
+          }),
+          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${projectId}.appspot.com`
+        });
+        isFirestoreConfigured = true;
+        console.log(`🔥 Firebase Admin initialized via env variables (${projectId})`);
+        return app;
+      } catch (e: any) {
+        console.error('❌ Failed to initialize Firebase Admin with env vars:', e?.message || e);
+      }
     }
-  }
 
-  console.error(
-    '❌ [Firebase Admin Init] Required service account credentials missing or incomplete. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY (or FIREBASE_SERVICE_ACCOUNT_JSON).'
-  );
-  isFirestoreConfigured = false;
-  return null;
+    // 3. Check GOOGLE_APPLICATION_CREDENTIALS or local service account JSON files
+    const possiblePaths = [
+      process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      path.join(process.cwd(), 'serviceAccountKey.json'),
+      path.join(process.cwd(), 'service-account.json'),
+      path.join(process.cwd(), 'serviceAccount.json'),
+      path.join(process.cwd(), 'firebase-service-account.json'),
+      path.join(process.cwd(), 'firebase-applet-config.json')
+    ].filter((p): p is string => Boolean(p));
+
+    for (const jsonPath of possiblePaths) {
+      if (fs.existsSync(jsonPath)) {
+        try {
+          const raw = fs.readFileSync(jsonPath, 'utf-8');
+          const parsed = JSON.parse(raw);
+          const pId = parsed.project_id || parsed.projectId;
+          const cEmail = parsed.client_email || parsed.clientEmail;
+          const pKey = formatPrivateKey(parsed.private_key || parsed.privateKey);
+
+          if (pId && cEmail && pKey) {
+            const app = initializeApp({
+              credential: cert({
+                projectId: pId,
+                clientEmail: cEmail,
+                privateKey: pKey
+              }),
+              storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
+            });
+            isFirestoreConfigured = true;
+            console.log(`🔥 Firebase Admin initialized via service account file (${path.basename(jsonPath)} / ${pId})`);
+            return app;
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ Could not parse service account file ${jsonPath}:`, e?.message || e);
+        }
+      }
+    }
+
+    // 4. GCP Container ADC Check (Cloud Run / App Engine with ADC)
+    // CRITICAL: NEVER perform ADC metadata-server discovery on Vercel
+    const isVercel = Boolean(process.env.VERCEL);
+    const isGCPContainer = Boolean(
+      !isVercel && (process.env.K_SERVICE || process.env.FUNCTION_NAME || process.env.CLOUD_RUN_JOB)
+    );
+
+    if (isGCPContainer && (projectId || process.env.GCLOUD_PROJECT)) {
+      try {
+        const app = initializeApp({
+          projectId: projectId || process.env.GCLOUD_PROJECT
+        });
+        isFirestoreConfigured = true;
+        console.log(`🔥 Firebase Admin initialized with GCP container ADC (${projectId || process.env.GCLOUD_PROJECT})`);
+        return app;
+      } catch (e: any) {
+        console.warn('⚠️ GCP default Firebase Admin init skipped:', e?.message || e);
+      }
+    }
+
+    console.error(
+      '❌ [Firebase Admin Init] Service account credentials missing or incomplete. Please check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY.'
+    );
+    isFirestoreConfigured = false;
+    return null;
+  } catch (err: any) {
+    console.error('❌ [Firebase Admin Init Top-Level Error]:', err?.message || err);
+    isFirestoreConfigured = false;
+    return null;
+  }
 }
 
 const firebaseApp = initFirebaseAdmin();

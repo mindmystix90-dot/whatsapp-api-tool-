@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { db } from './db.js';
-import { sendWhatsAppTextMessage } from './whatsapp.js';
-import { generateAIReply } from './gemini.js';
-import { Customer, Conversation, Message, Lead } from '../src/types.js';
+import { db } from './db';
+import { sendWhatsAppTextMessage } from './whatsapp';
+import { generateAIReply } from './gemini';
+import { Customer, Conversation, Message, Lead } from '../src/types';
 
 /**
  * GET /api/whatsapp/webhook & /api/webhook/whatsapp - Meta Webhook Verification

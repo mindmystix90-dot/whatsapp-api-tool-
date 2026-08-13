@@ -7,18 +7,28 @@ export default async function handler(req: any, res: any) {
       res.setHeader('Content-Type', 'application/json');
     }
 
-    // Wait max 2 seconds for background admin seed check, but proceed regardless
+    // Normalize URL for Vercel rewrites if needed
+    const rawUrl = req.url || '';
+    const forwardedUri = req.headers ? (req.headers['x-forwarded-uri'] || req.headers['x-matched-path']) : null;
+    console.log(`[VERCEL HANDLER] ${req.method} ${rawUrl} | Forwarded: ${forwardedUri || 'N/A'}`);
+
+    if (forwardedUri && typeof forwardedUri === 'string' && forwardedUri.startsWith('/api')) {
+      req.url = forwardedUri;
+    }
+
+    // Wait max 1.5s for appReady background admin seed, but proceed regardless
     await Promise.race([
       appReady,
-      new Promise((resolve) => setTimeout(resolve, 2000))
+      new Promise((resolve) => setTimeout(resolve, 1500))
     ]).catch((err) => {
       console.warn('[Vercel Serverless] Background init warning:', err?.message || err);
     });
 
-    // Execute Express app and handle any uncaught async errors
+    // Execute Express app and handle response completion
     return await new Promise((resolve) => {
       res.on('finish', resolve);
       res.on('close', resolve);
+      
       app(req, res, (err: any) => {
         if (err && !res.headersSent) {
           console.error('[Vercel Express Handler Error]:', err?.message || err);
@@ -31,7 +41,7 @@ export default async function handler(req: any, res: any) {
       });
     });
   } catch (err: any) {
-    console.error('[Vercel Serverless Top-Level Error]:', err?.message || err);
+    console.error('[Vercel Serverless Top-Level Catch]:', err?.message || err);
     if (!res.headersSent) {
       return res.status(500).json({
         error: 'Server error handling request',
@@ -40,4 +50,5 @@ export default async function handler(req: any, res: any) {
     }
   }
 }
+
 

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import {
   db
-} from './server/db.js';
+} from './server/db';
 import {
   authenticateToken,
   requireAdmin,
@@ -13,20 +13,28 @@ import {
   comparePassword,
   initAdminUser,
   AuthenticatedRequest
-} from './server/auth.js';
+} from './server/auth';
 import {
   verifyWhatsAppCredentials,
   sendWhatsAppTextMessage,
   sendWhatsAppTemplateMessage
-} from './server/whatsapp.js';
-import { generateAIReply } from './server/gemini.js';
-import { handleWebhookVerification, handleWebhookEvent } from './server/webhook.js';
-import { User, Business, AISettings, WhatsAppConnection, Customer, LeadStatus } from './src/types.js';
+} from './server/whatsapp';
+import { generateAIReply } from './server/gemini';
+import { handleWebhookVerification, handleWebhookEvent } from './server/webhook';
+import { User, Business, AISettings, WhatsAppConnection, Customer, LeadStatus } from './src/types';
 
 dotenv.config();
 
 export const app = express();
 const PORT = 3000;
+
+// Prevent body-parser stream hanging on Vercel where req.body is pre-parsed
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+    (req as any)._body = true;
+  }
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -151,7 +159,7 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
   }
 });
 
-  app.post('/api/auth/login', async (req, res) => {
+  app.post(['/api/auth/login', '/auth/login'], async (req, res) => {
     try {
       const { email, password } = req.body || {};
       const cleanEmail = email ? String(email).trim() : '';
@@ -196,7 +204,7 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
     }
   });
 
-  app.get('/api/auth/me', authenticateToken, (req: AuthenticatedRequest, res) => {
+  app.get(['/api/auth/me', '/auth/me'], authenticateToken, (req: AuthenticatedRequest, res) => {
     res.json({ user: req.user });
   });
 
