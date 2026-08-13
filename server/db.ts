@@ -37,13 +37,10 @@ let isFirestoreConfigured = false;
 function formatPrivateKey(key: string | undefined): string | undefined {
   if (!key) return undefined;
   let formatted = key.trim();
-  if (formatted.startsWith('"') && formatted.endsWith('"')) {
-    formatted = formatted.substring(1, formatted.length - 1);
+  if ((formatted.startsWith('"') && formatted.endsWith('"')) || (formatted.startsWith("'") && formatted.endsWith("'"))) {
+    formatted = formatted.substring(1, formatted.length - 1).trim();
   }
-  if (formatted.startsWith("'") && formatted.endsWith("'")) {
-    formatted = formatted.substring(1, formatted.length - 1);
-  }
-  return formatted.replace(/\\n/g, '\n');
+  return formatted.replace(/\\\\n/g, '\n').replace(/\\n/g, '\n');
 }
 
 function initFirebaseAdmin(): App | null {
@@ -230,22 +227,27 @@ class FirestoreDatabase {
     const cleanEmail = email.trim().toLowerCase();
 
     if (this.isUsingFirestore()) {
-      const snap = await firestore!
-        .collection(COLLECTIONS.USERS)
-        .where('email', '==', cleanEmail)
-        .limit(1)
-        .get();
-      if (snap.empty) return undefined;
-      const doc = snap.docs[0];
-      const data = doc.data();
-      return {
-        id: doc.id,
-        email: data.email,
-        name: data.name,
-        role: data.role,
-        business_id: data.businessId || data.business_id,
-        created_at: data.createdAt || data.created_at || new Date().toISOString()
-      };
+      try {
+        const snap = await firestore!
+          .collection(COLLECTIONS.USERS)
+          .where('email', '==', cleanEmail)
+          .limit(1)
+          .get();
+        if (snap.empty) return undefined;
+        const doc = snap.docs[0];
+        const data = doc.data();
+        return {
+          id: doc.id,
+          email: data.email,
+          name: data.name,
+          role: data.role,
+          business_id: data.businessId || data.business_id,
+          created_at: data.createdAt || data.created_at || new Date().toISOString()
+        };
+      } catch (err: any) {
+        console.error('❌ Firestore findUserByEmail error:', err?.message || err);
+        throw new Error(`Firestore user query failed: ${err?.message || String(err)}`);
+      }
     }
 
     return this.mem.users.find((u) => u.email.toLowerCase() === cleanEmail);
@@ -256,17 +258,22 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const doc = await firestore!.collection(COLLECTIONS.USERS).doc(id).get();
-      if (!doc.exists) return undefined;
-      const data = doc.data()!;
-      return {
-        id: doc.id,
-        email: data.email,
-        name: data.name,
-        role: data.role,
-        business_id: data.businessId || data.business_id,
-        created_at: data.createdAt || data.created_at || new Date().toISOString()
-      };
+      try {
+        const doc = await firestore!.collection(COLLECTIONS.USERS).doc(id).get();
+        if (!doc.exists) return undefined;
+        const data = doc.data()!;
+        return {
+          id: doc.id,
+          email: data.email,
+          name: data.name,
+          role: data.role,
+          business_id: data.businessId || data.business_id,
+          created_at: data.createdAt || data.created_at || new Date().toISOString()
+        };
+      } catch (err: any) {
+        console.error('❌ Firestore findUserById error:', err?.message || err);
+        throw new Error(`Firestore user read failed: ${err?.message || String(err)}`);
+      }
     }
 
     return this.mem.users.find((u) => u.id === id);
@@ -276,18 +283,23 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const snap = await firestore!.collection(COLLECTIONS.USERS).get();
-      return snap.docs.map((doc) => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          email: data.email,
-          name: data.name,
-          role: data.role,
-          business_id: data.businessId || data.business_id,
-          created_at: data.createdAt || data.created_at || new Date().toISOString()
-        };
-      });
+      try {
+        const snap = await firestore!.collection(COLLECTIONS.USERS).get();
+        return snap.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            email: data.email,
+            name: data.name,
+            role: data.role,
+            business_id: data.businessId || data.business_id,
+            created_at: data.createdAt || data.created_at || new Date().toISOString()
+          };
+        });
+      } catch (err: any) {
+        console.error('❌ Firestore getAllUsers error:', err?.message || err);
+        throw new Error(`Firestore getAllUsers failed: ${err?.message || String(err)}`);
+      }
     }
 
     return [...this.mem.users];
@@ -298,17 +310,22 @@ class FirestoreDatabase {
     const businessId = user.business_id;
 
     if (this.isUsingFirestore()) {
-      await firestore!.collection(COLLECTIONS.USERS).doc(user.id).set({
-        id: user.id,
-        email: user.email.toLowerCase(),
-        name: user.name,
-        role: user.role,
-        businessId: businessId,
-        business_id: businessId,
-        passwordHash,
-        createdAt: user.created_at
-      });
-      return user;
+      try {
+        await firestore!.collection(COLLECTIONS.USERS).doc(user.id).set({
+          id: user.id,
+          email: user.email.toLowerCase(),
+          name: user.name,
+          role: user.role,
+          businessId: businessId,
+          business_id: businessId,
+          passwordHash,
+          createdAt: user.created_at
+        });
+        return user;
+      } catch (err: any) {
+        console.error('❌ Firestore createUser error:', err?.message || err);
+        throw new Error(`Firestore createUser failed: ${err?.message || String(err)}`);
+      }
     }
 
     this.mem.users.push(user);
@@ -320,9 +337,14 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      const doc = await firestore!.collection(COLLECTIONS.USERS).doc(userId).get();
-      if (!doc.exists) return undefined;
-      return doc.data()?.passwordHash;
+      try {
+        const doc = await firestore!.collection(COLLECTIONS.USERS).doc(userId).get();
+        if (!doc.exists) return undefined;
+        return doc.data()?.passwordHash;
+      } catch (err: any) {
+        console.error('❌ Firestore getPasswordHash error:', err?.message || err);
+        throw new Error(`Firestore getPasswordHash failed: ${err?.message || String(err)}`);
+      }
     }
 
     return this.mem.passwords[userId];

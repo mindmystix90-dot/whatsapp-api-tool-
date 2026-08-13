@@ -153,31 +153,46 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
 
   app.post('/api/auth/login', async (req, res) => {
     try {
-      const { email, password } = req.body;
-      if (!email || !password) {
+      const { email, password } = req.body || {};
+      const cleanEmail = email ? String(email).trim() : '';
+      console.log('[AUTH] Login request received for email:', cleanEmail || 'MISSING');
+
+      if (!cleanEmail || !password) {
+        console.log('[AUTH] Login failed: Missing email or password');
         return res.status(400).json({ error: 'Email and password are required' });
       }
 
-      const user = await db.findUserByEmail(email);
+      console.log('[AUTH] Looking up user in database...');
+      const user = await db.findUserByEmail(cleanEmail);
       if (!user) {
+        console.log('[AUTH] Login failed: User not found for email');
         return res.status(401).json({ error: 'Invalid email or password' });
       }
 
+      console.log('[AUTH] User found, fetching password hash...');
       const passwordHash = await db.getPasswordHash(user.id);
       if (!passwordHash) {
+        console.log('[AUTH] Login failed: Password hash missing for user ID:', user.id);
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
+      console.log('[AUTH] Verifying password hash...');
       const valid = await comparePassword(password, passwordHash);
       if (!valid) {
+        console.log('[AUTH] Login failed: Password mismatch for user ID:', user.id);
         return res.status(401).json({ error: 'Invalid email or password' });
       }
 
+      console.log('[AUTH] Password verified, generating JWT...');
       const token = generateToken(user);
+      console.log('[AUTH] Login completed successfully for user ID:', user.id);
       return res.json({ token, user });
     } catch (err: any) {
-      console.error('Login error:', err);
-      return res.status(500).json({ error: 'Failed to authenticate user' });
+      console.error('[AUTH] Login exception:', err?.message || err);
+      return res.status(500).json({
+        error: 'Failed to authenticate user',
+        details: err?.message || String(err)
+      });
     }
   });
 

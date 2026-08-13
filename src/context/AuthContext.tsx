@@ -60,16 +60,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
+
     let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
+    const contentType = res.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json();
+      } catch (err) {
+        console.error('Failed to parse JSON response:', err);
+      }
+    } else {
+      const rawText = await res.text().catch(() => '');
+      console.error(`Non-JSON response received from server (${res.status}):`, rawText);
+      data = {
+        error: `Server returned non-JSON response (${res.status})`,
+        details: rawText.substring(0, 200) || res.statusText || 'Unknown server response'
+      };
     }
+
     if (!res.ok) {
-      const errMsg = data?.details ? `${data.error}: ${data.details}` : (data?.error || 'Failed to login');
+      const errMsg = data?.details 
+        ? `${data.error || 'Login failed'}: ${data.details}` 
+        : (data?.error || `Login failed with status ${res.status}`);
       throw new Error(errMsg);
     }
+
+    if (!data?.token || !data?.user) {
+      throw new Error('Invalid authentication response from server.');
+    }
+
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
     setUser(data.user);
@@ -81,16 +101,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name, businessName })
     });
+
     let data: any = null;
-    try {
-      data = await res.json();
-    } catch {
-      throw new Error(`Server returned error (${res.status}): ${res.statusText || 'Invalid response'}`);
+    const contentType = res.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json();
+      } catch (err) {
+        console.error('Failed to parse JSON response:', err);
+      }
+    } else {
+      const rawText = await res.text().catch(() => '');
+      console.error(`Non-JSON response received from server (${res.status}):`, rawText);
+      data = {
+        error: `Server returned non-JSON response (${res.status})`,
+        details: rawText.substring(0, 200) || res.statusText || 'Unknown server response'
+      };
     }
+
     if (!res.ok) {
-      const errMsg = data?.details ? `${data.error}: ${data.details}` : (data?.error || 'Failed to sign up');
+      const errMsg = data?.details 
+        ? `${data.error || 'Registration failed'}: ${data.details}` 
+        : (data?.error || `Registration failed with status ${res.status}`);
       throw new Error(errMsg);
     }
+
+    if (!data?.token || !data?.user) {
+      throw new Error('Invalid registration response from server.');
+    }
+
     localStorage.setItem('fishcatch_token', data.token);
     setToken(data.token);
     setUser(data.user);
