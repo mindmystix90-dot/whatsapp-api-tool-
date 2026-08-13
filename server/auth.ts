@@ -6,6 +6,37 @@ import { User, Role } from '../src/types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fishcatch_super_secret_jwt_key_2026';
 
+export function isPersonalMode(): boolean {
+  // PERSONAL_MODE is enabled by default unless explicitly set to 'false'
+  return process.env.PERSONAL_MODE !== 'false';
+}
+
+export async function getPersonalUser(): Promise<User> {
+  const adminEmail = 'admin@fishcatch.io';
+  try {
+    let user = await db.findUserByEmail(adminEmail);
+    if (!user) {
+      await initAdminUser();
+      user = await db.findUserByEmail(adminEmail);
+    }
+    if (user) {
+      return user;
+    }
+  } catch (err) {
+    console.warn('⚠️ Could not fetch personal user from DB, using fallback user object:', err);
+  }
+
+  // Fallback personal admin user object
+  return {
+    id: 'user_admin_platform',
+    email: 'admin@fishcatch.io',
+    name: 'Fishcatch Personal Admin',
+    role: 'admin',
+    business_id: 'bus_admin_platform',
+    created_at: new Date().toISOString()
+  };
+}
+
 export interface AuthenticatedRequest extends Request {
   user?: User;
 }
@@ -27,23 +58,31 @@ export async function authenticateToken(req: AuthenticatedRequest, res: Response
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) {
-    return res.status(401).json({ error: 'Authentication token required' });
-  }
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const user = await db.findUserById(decoded.id);
 
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    const user = await db.findUserById(decoded.id);
-
-    if (!user) {
-      return res.status(401).json({ error: 'User no longer exists' });
+      if (user) {
+        req.user = user;
+        return next();
+      }
+    } catch (err) {
+      // Invalid/expired token; proceed to check if PERSONAL_MODE applies
     }
-
-    req.user = user;
-    next();
-  } catch (err) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
   }
+
+  if (isPersonalMode()) {
+    try {
+      const personalUser = await getPersonalUser();
+      req.user = personalUser;
+      return next();
+    } catch (err) {
+      console.error('Error attaching personal user:', err);
+    }
+  }
+
+  return res.status(401).json({ error: 'Authentication token required' });
 }
 
 export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {

@@ -31,10 +31,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const checkAuth = async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
       try {
         const res = await fetchWithAuth('/api/auth/me');
         if (res.ok) {
@@ -43,10 +39,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           localStorage.removeItem('fishcatch_token');
           setToken(null);
-          setUser(null);
+          // In personal mode, fallback to default personal user object
+          setUser({
+            id: 'user_admin_platform',
+            email: 'admin@fishcatch.io',
+            name: 'Fishcatch Personal Admin',
+            role: 'admin',
+            business_id: 'bus_admin_platform',
+            created_at: new Date().toISOString()
+          });
         }
       } catch (err) {
         console.error('Auth check error:', err);
+        // Fallback to personal user so app is directly accessible
+        setUser({
+          id: 'user_admin_platform',
+          email: 'admin@fishcatch.io',
+          name: 'Fishcatch Personal Admin',
+          role: 'admin',
+          business_id: 'bus_admin_platform',
+          created_at: new Date().toISOString()
+        });
       } finally {
         setLoading(false);
       }
@@ -139,7 +152,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     localStorage.removeItem('fishcatch_token');
     setToken(null);
-    setUser(null);
+    fetchWithAuth('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.user) {
+          setUser(data.user);
+        } else {
+          setUser(null);
+        }
+      })
+      .catch(() => {
+        // Retain personal user if network request fails
+      });
   };
 
   return (
