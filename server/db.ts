@@ -108,31 +108,41 @@ function initFirebaseAdmin(): App | null {
     }
   }
 
-  // 3. Check firebase-applet-config.json
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    try {
-      const raw = fs.readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      const pId = parsed.projectId || parsed.project_id;
-      const cEmail = parsed.clientEmail || parsed.client_email;
-      const pKey = formatPrivateKey(parsed.privateKey || parsed.private_key);
+  // 3. Check GOOGLE_APPLICATION_CREDENTIALS or local service account JSON files
+  const possiblePaths = [
+    process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    path.join(process.cwd(), 'serviceAccountKey.json'),
+    path.join(process.cwd(), 'service-account.json'),
+    path.join(process.cwd(), 'serviceAccount.json'),
+    path.join(process.cwd(), 'firebase-service-account.json'),
+    path.join(process.cwd(), 'firebase-applet-config.json')
+  ].filter((p): p is string => Boolean(p));
 
-      if (pId && cEmail && pKey) {
-        const app = initializeApp({
-          credential: cert({
-            projectId: pId,
-            clientEmail: cEmail,
-            privateKey: pKey
-          }),
-          storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
-        });
-        isFirestoreConfigured = true;
-        console.log(`🔥 Firebase Admin initialized via firebase-applet-config.json (${pId})`);
-        return app;
+  for (const jsonPath of possiblePaths) {
+    if (fs.existsSync(jsonPath)) {
+      try {
+        const raw = fs.readFileSync(jsonPath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        const pId = parsed.project_id || parsed.projectId;
+        const cEmail = parsed.client_email || parsed.clientEmail;
+        const pKey = formatPrivateKey(parsed.private_key || parsed.privateKey);
+
+        if (pId && cEmail && pKey) {
+          const app = initializeApp({
+            credential: cert({
+              projectId: pId,
+              clientEmail: cEmail,
+              privateKey: pKey
+            }),
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${pId}.appspot.com`
+          });
+          isFirestoreConfigured = true;
+          console.log(`🔥 Firebase Admin initialized via service account file (${path.basename(jsonPath)} / ${pId})`);
+          return app;
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ Could not parse service account file ${jsonPath}:`, e?.message || e);
       }
-    } catch (e: any) {
-      console.warn('⚠️ Could not parse firebase-applet-config.json:', e?.message || e);
     }
   }
 
