@@ -14,7 +14,9 @@ import {
   Lead,
   AISettings,
   LeadStatus,
-  WhatsAppConnectionStatus
+  WhatsAppConnectionStatus,
+  WhatsAppTemplate,
+  AdminAuditLog
 } from '../src/types.js';
 
 // Firestore Collection Names
@@ -264,11 +266,12 @@ export const firebaseStorage: Storage | null = new Proxy({} as any, {
   }
 });
 
-function isVercelEnvironment(): boolean {
-  return Boolean(process.env.VERCEL);
+export function isProductionEnvironment(): boolean {
+  if (process.env.TESTING === 'true') return false;
+  return process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL) || Boolean(process.env.K_SERVICE);
 }
 
-// Ephemeral memory fallback store ONLY for local development when credentials are not configured
+// Ephemeral memory store ONLY for local test suites and local dev when credentials are not configured
 interface EphemeralStore {
   users: User[];
   passwords: Record<string, string>;
@@ -279,33 +282,8 @@ interface EphemeralStore {
   messages: Message[];
   leads: Lead[];
   aiSettings: AISettings[];
-}
-
-const FILE_STORE_PATH = process.env.VERCEL ? '/tmp/fishcatch_wa_store.json' : path.join(process.cwd(), '.data', 'fishcatch_wa_store.json');
-
-function saveWaConnectionsToFile(connections: WhatsAppConnection[]) {
-  try {
-    const dir = path.dirname(FILE_STORE_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(FILE_STORE_PATH, JSON.stringify(connections, null, 2), 'utf-8');
-  } catch (e) {
-    console.warn('⚠️ Failed to save WA connections to file store:', e);
-  }
-}
-
-function loadWaConnectionsFromFile(): WhatsAppConnection[] {
-  try {
-    if (fs.existsSync(FILE_STORE_PATH)) {
-      const raw = fs.readFileSync(FILE_STORE_PATH, 'utf-8');
-      const data = JSON.parse(raw);
-      if (Array.isArray(data)) return data;
-    }
-  } catch (e) {
-    console.warn('⚠️ Failed to load WA connections from file store:', e);
-  }
-  return [];
+  templates: WhatsAppTemplate[];
+  auditLogs: AdminAuditLog[];
 }
 
 class FirestoreDatabase {
@@ -318,7 +296,9 @@ class FirestoreDatabase {
     conversations: [],
     messages: [],
     leads: [],
-    aiSettings: []
+    aiSettings: [],
+    templates: [],
+    auditLogs: []
   };
 
   public isUsingFirestore(): boolean {
@@ -326,16 +306,8 @@ class FirestoreDatabase {
   }
 
   private ensureDatabaseReady() {
-    if (!this.isUsingFirestore()) {
-      if (this.mem.whatsappConnections.length === 0) {
-        const loaded = loadWaConnectionsFromFile();
-        if (loaded.length > 0) {
-          this.mem.whatsappConnections = loaded;
-        }
-      }
-      if (isVercelEnvironment()) {
-        console.warn('⚠️ [Firebase Vercel Notice]: Firebase environment variables are missing. Using file/memory store for this request.');
-      }
+    if (isProductionEnvironment() && !this.isUsingFirestore()) {
+      throw new Error('DATABASE_UNAVAILABLE: Firestore production database is required in production but credentials are not configured or failed to initialize.');
     }
   }
 
@@ -661,8 +633,10 @@ class FirestoreDatabase {
             };
           });
         }
+        return [];
       } catch (err: any) {
-        console.warn('⚠️ Firestore getWhatsAppConnectionsByBusinessId error, falling back to memory store:', err?.message || err);
+        console.error('❌ Firestore getWhatsAppConnectionsByBusinessId error:', err?.message || err);
+        throw new Error(`Firestore getWhatsAppConnectionsByBusinessId failed: ${err?.message || String(err)}`);
       }
     }
 
@@ -752,8 +726,10 @@ class FirestoreDatabase {
             updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
           };
         }
+        return undefined;
       } catch (err: any) {
-        console.warn('⚠️ Firestore getWhatsAppConnectionByPhoneNumberId error, falling back to memory store:', err?.message || err);
+        console.error('❌ Firestore getWhatsAppConnectionByPhoneNumberId error:', err?.message || err);
+        throw new Error(`Firestore getWhatsAppConnectionByPhoneNumberId failed: ${err?.message || String(err)}`);
       }
     }
 
@@ -804,7 +780,8 @@ class FirestoreDatabase {
           };
         });
       } catch (err: any) {
-        console.warn('⚠️ Firestore getAllWhatsAppConnections error, falling back to memory store:', err?.message || err);
+        console.error('❌ Firestore getAllWhatsAppConnections error:', err?.message || err);
+        throw new Error(`Firestore getAllWhatsAppConnections failed: ${err?.message || String(err)}`);
       }
     }
 
@@ -847,7 +824,8 @@ class FirestoreDatabase {
         const saved = await this.getWhatsAppConnectionByBusinessId(connection.business_id);
         if (saved) return saved;
       } catch (err: any) {
-        console.warn('⚠️ Firestore upsertWhatsAppConnection error, falling back to memory store:', err?.message || err);
+        console.error('❌ Firestore upsertWhatsAppConnection error:', err?.message || err);
+        throw new Error(`Firestore upsertWhatsAppConnection failed: ${err?.message || String(err)}`);
       }
     }
 
@@ -861,7 +839,6 @@ class FirestoreDatabase {
     } else {
       this.mem.whatsappConnections.push({ ...connection, id: docId, updated_at: now });
     }
-    saveWaConnectionsToFile(this.mem.whatsappConnections);
     return (await this.getWhatsAppConnectionByBusinessId(connection.business_id))!;
   }
 
@@ -878,13 +855,14 @@ class FirestoreDatabase {
         for (const doc of snap.docs) {
           await doc.ref.delete();
         }
+        return true;
       } catch (err: any) {
-        console.warn('⚠️ Firestore deleteWhatsAppConnectionByBusinessId error:', err?.message || err);
+        console.error('❌ Firestore deleteWhatsAppConnectionByBusinessId error:', err?.message || err);
+        throw new Error(`Firestore deleteWhatsAppConnectionByBusinessId failed: ${err?.message || String(err)}`);
       }
     }
 
     this.mem.whatsappConnections = this.mem.whatsappConnections.filter((w) => w.business_id !== businessId);
-    saveWaConnectionsToFile(this.mem.whatsappConnections);
     return true;
   }
 

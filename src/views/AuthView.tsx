@@ -37,12 +37,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleFillDemoAdmin = () => {
-    setEmail('admin@fishcatch.io');
-    setPassword('admin123');
-    setIsSignup(false);
-  };
-
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6 relative overflow-hidden select-none">
       {/* Background Radial Glow */}
@@ -156,18 +150,6 @@ export const AuthView: React.FC<AuthViewProps> = ({ onNavigate }) => {
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
-
-          {/* Demo Admin Login Button */}
-          <div className="pt-4 border-t border-slate-800 text-center space-y-2">
-            <p className="text-[11px] text-slate-400">Testing platform features?</p>
-            <button
-              type="button"
-              onClick={handleFillDemoAdmin}
-              className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 px-3 py-1.5 rounded-lg transition-colors border border-cyan-500/20"
-            >
-              Fill Demo Admin Credentials (admin@fishcatch.io / admin123)
-            </button>
-          </div>
         </div>
       </div>
 
