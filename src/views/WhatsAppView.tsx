@@ -168,11 +168,12 @@ export const WhatsAppView: React.FC = () => {
               console.log('[WhatsApp Embedded Signup]\nPhone Number ID:', phone_number_id || 'N/A');
               setSignupData({ phone_number_id, waba_id, business_id });
             } else if (data.event === 'CANCEL') {
-              setFbError('WhatsApp onboarding was not completed.');
+              setFbError('WhatsApp onboarding was cancelled.');
               setConnectingFb(false);
             } else if (data.event === 'ERROR') {
-              setFbError('WhatsApp onboarding failed.');
-              setFbDebugError(data.data?.error_message || 'Embedded signup event reported an error.');
+              const errMsg = data.data?.error_message || 'Embedded signup reported an error.';
+              setFbError(`WhatsApp onboarding error: ${errMsg}`);
+              setFbDebugError(JSON.stringify(data.data || data, null, 2));
               setConnectingFb(false);
             }
           }
@@ -208,11 +209,14 @@ export const WhatsAppView: React.FC = () => {
     setFbDebugError(null);
 
     try {
+      const activeCode = codeVal || oauthCode || undefined;
+      const activeSignup = signupVal || signupData || undefined;
+
       const payload = {
-        code: codeVal || oauthCode || undefined,
-        phone_number_id: signupVal?.phone_number_id || signupData?.phone_number_id || undefined,
-        waba_id: signupVal?.waba_id || signupData?.waba_id || undefined,
-        business_id: signupVal?.business_id || signupData?.business_id || undefined,
+        code: activeCode,
+        phone_number_id: activeSignup?.phone_number_id || undefined,
+        waba_id: activeSignup?.waba_id || undefined,
+        business_id: activeSignup?.business_id || undefined,
         meta_app_id: META_APP_ID
       };
 
@@ -222,26 +226,35 @@ export const WhatsAppView: React.FC = () => {
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json().catch(() => ({}));
+      let data: any = {};
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await res.json().catch(() => ({}));
+      } else {
+        const rawText = await res.text();
+        data = { error: { message: rawText || `HTTP ${res.status}` } };
+      }
 
-      if (res.ok && data.success) {
+      if (res.ok && data.success && data.status === 'Connected') {
         setFbSuccess('WhatsApp connected successfully!');
+        if (data.connection) {
+          setActiveConnection(data.connection);
+        }
+        await loadWhatsAppConfig();
+      } else if (res.ok && data.success) {
+        setFbSuccess('WhatsApp configuration saved.');
         await loadWhatsAppConfig();
       } else {
-        if (data.error?.includes('access token') || data.error?.includes('code')) {
-          setFbError('Could not complete Meta authorization.');
-        } else if (data.error?.includes('WABA')) {
-          setFbError('WhatsApp Business Account setup failed.');
-        } else if (data.error?.includes('register') || data.error?.includes('phone')) {
-          setFbError('Phone number registration failed.');
-        } else {
-          setFbError('WhatsApp onboarding was not completed.');
-        }
-        setFbDebugError(data.error || 'Unknown error occurred during onboarding.');
+        const errObj = data.error || {};
+        const errMsg = typeof errObj === 'string' ? errObj : (errObj.message || 'WhatsApp onboarding was not completed.');
+        const errCode = errObj.code ? `[${errObj.code}] ` : '';
+        
+        setFbError(`${errCode}${errMsg}`);
+        setFbDebugError(errObj.details ? JSON.stringify(errObj.details, null, 2) : (typeof data.error === 'object' ? JSON.stringify(data.error, null, 2) : String(errMsg)));
       }
     } catch (err: any) {
-      setFbError('WhatsApp onboarding was not completed.');
-      setFbDebugError(err.message || String(err));
+      setFbError(`WhatsApp onboarding network error: ${err.message || String(err)}`);
+      setFbDebugError(err.stack || String(err));
     } finally {
       setConnectingFb(false);
       isSubmittingRef.current = false;
@@ -272,14 +285,17 @@ export const WhatsAppView: React.FC = () => {
           (response: any) => {
             if (response.authResponse?.code) {
               console.log('[WhatsApp Embedded Signup]\nOAuth code received: YES');
-              setOauthCode(response.authResponse.code);
-              // In case WA_EMBEDDED_SIGNUP message arrives later, state machine will trigger.
-              // If WA_EMBEDDED_SIGNUP message is not sent in this flow version, fallback trigger in 3s:
+              const code = response.authResponse.code;
+              setOauthCode(code);
+              // Fallback trigger if WA_EMBEDDED_SIGNUP postMessage does not arrive within 2.5s
               setTimeout(() => {
                 if (!isSubmittingRef.current) {
-                  submitEmbeddedSignup(response.authResponse.code, null);
+                  submitEmbeddedSignup(code, null);
                 }
-              }, 3000);
+              }, 2500);
+            } else if (response.status === 'unknown' || response.status === 'not_authorized') {
+              setFbError('Facebook authorization window was closed or cancelled.');
+              setConnectingFb(false);
             } else {
               setFbError('Facebook authorization failed.');
               setConnectingFb(false);
@@ -386,9 +402,10 @@ export const WhatsAppView: React.FC = () => {
           text: `Verified successfully! Phone: ${data.phone_number || ''} (${data.display_name || ''})`
         });
       } else {
+        const errMsg = typeof data.error === 'string' ? data.error : (data.error?.message || 'Failed to verify WhatsApp credentials');
         setVerifyMsg({
           success: false,
-          text: data.error || 'Failed to verify WhatsApp credentials'
+          text: errMsg
         });
       }
       await loadWhatsAppConfig();

@@ -14,7 +14,11 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({
       success: false,
-      error: `Method ${req.method} not allowed. Please use POST.`
+      status: 'Method Not Allowed',
+      error: {
+        code: 'METHOD_NOT_ALLOWED',
+        message: `Method ${req.method} not allowed. Please use POST.`
+      }
     });
   }
 
@@ -26,7 +30,11 @@ export default async function handler(req: any, res: any) {
       } catch {
         return res.status(400).json({
           success: false,
-          error: 'Invalid JSON request body.'
+          status: 'Bad Request',
+          error: {
+            code: 'INVALID_JSON',
+            message: 'Invalid JSON request body.'
+          }
         });
       }
     }
@@ -35,33 +43,44 @@ export default async function handler(req: any, res: any) {
     const { code, phone_number_id, waba_id, meta_app_id, access_token: bodyToken, coexistence_mode } = body;
 
     const graphVersion = process.env.META_GRAPH_API_VERSION || 'v25.0';
-    let metaAppId = (meta_app_id || process.env.META_APP_ID || '3356483501181888').toString().trim();
-    let metaAppSecret = (process.env.META_APP_SECRET || '').toString().trim();
+    const metaAppId = (meta_app_id || process.env.META_APP_ID || '3356483501181888').toString().trim();
+    const metaAppSecret = (process.env.META_APP_SECRET || '').toString().trim();
     let userAccessToken = (bodyToken || '').toString().trim();
 
     if (userAccessToken.includes('••••')) {
       userAccessToken = '';
     }
 
-    // Required logging without sensitive secrets
     console.log(`[WhatsApp Embedded Signup]\nOAuth code received: ${code ? 'YES' : 'NO'}`);
     console.log(`[WhatsApp Embedded Signup]\nWABA ID: ${waba_id || 'N/A'}`);
     console.log(`[WhatsApp Embedded Signup]\nPhone Number ID: ${phone_number_id || 'N/A'}`);
 
+    let exchangeError: any = null;
+
     // Step 1: Code exchange if OAuth authorization code was provided
     if (code) {
       if (!metaAppSecret) {
-        console.warn(`[WhatsApp Embedded Signup] Warning: META_APP_SECRET environment variable is missing.`);
+        console.warn(`⚠️ [WhatsApp Embedded Signup] META_APP_SECRET environment variable is missing on server.`);
+        return res.status(400).json({
+          success: false,
+          status: 'Configuration Error',
+          error: {
+            code: 'META_APP_SECRET_MISSING',
+            message: 'META_APP_SECRET environment variable is missing in server environment. Please configure META_APP_SECRET in your Vercel project settings.'
+          }
+        });
       }
+
       try {
+        // Exchange code with Meta Graph API
         const tokenParams = new URLSearchParams({
           client_id: metaAppId,
           client_secret: metaAppSecret,
-          code: code,
-          grant_type: 'authorization_code'
+          code: code
         });
 
-        const tokenRes = await fetch(`https://graph.facebook.com/${graphVersion}/oauth/access_token?${tokenParams.toString()}`, {
+        const tokenUrl = `https://graph.facebook.com/${graphVersion}/oauth/access_token?${tokenParams.toString()}`;
+        const tokenRes = await fetch(tokenUrl, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -69,21 +88,70 @@ export default async function handler(req: any, res: any) {
         const tokenData = await tokenRes.json().catch(() => ({}));
         if (tokenRes.ok && tokenData.access_token) {
           userAccessToken = tokenData.access_token;
-          console.log(`[WhatsApp Embedded Signup]\nToken exchange: SUCCESS`);
+          console.log(`✅ [WhatsApp Embedded Signup] Token exchange: SUCCESS`);
         } else {
-          console.error(`[WhatsApp Embedded Signup]\nToken exchange: FAILED (${tokenData?.error?.message || 'Unknown error'})`);
+          exchangeError = tokenData?.error || { message: `Meta Graph API returned HTTP ${tokenRes.status}` };
+          console.error(`❌ [WhatsApp Embedded Signup] Token exchange: FAILED`, exchangeError);
+          return res.status(400).json({
+            success: false,
+            status: 'Token Exchange Failed',
+            error: {
+              code: 'META_TOKEN_EXCHANGE_FAILED',
+              message: exchangeError.message || 'Failed to exchange authorization code for access token with Meta Graph API.',
+              details: exchangeError
+            }
+          });
         }
       } catch (e: any) {
-        console.error(`[WhatsApp Embedded Signup]\nToken exchange: FAILED (${e?.message || e})`);
+        console.error(`❌ [WhatsApp Embedded Signup] Token exchange exception:`, e?.message || e);
+        return res.status(500).json({
+          success: false,
+          status: 'Token Exchange Exception',
+          error: {
+            code: 'TOKEN_EXCHANGE_EXCEPTION',
+            message: `Network error exchanging authorization code: ${e?.message || String(e)}`
+          }
+        });
       }
     }
 
-    let existing = await db.getWhatsAppConnectionByBusinessId(businessId);
+    const existing = await db.getWhatsAppConnectionByBusinessId(businessId);
     let finalToken = userAccessToken || existing?.access_token || '';
+
+    if (!finalToken && !phone_number_id && !waba_id) {
+      return res.status(400).json({
+        success: false,
+        status: 'Missing Credentials',
+        error: {
+          code: 'MISSING_CREDENTIALS',
+          message: 'No authorization code, access token, or phone number details provided.'
+        }
+      });
+    }
 
     let targetPhoneId = (phone_number_id || existing?.phone_number_id || '').toString().trim();
     let targetWabaId = (waba_id || existing?.waba_id || '').toString().trim();
     let webhookStatus = 'Connected';
+
+    // Discovery Step: If targetWabaId is missing but we have an access token, discover WABA from debug_token or Graph API
+    if (!targetWabaId && finalToken) {
+      try {
+        const debugUrl = `https://graph.facebook.com/${graphVersion}/debug_token?input_token=${encodeURIComponent(finalToken)}&access_token=${encodeURIComponent(metaAppId)}|${encodeURIComponent(metaAppSecret || finalToken)}`;
+        const debugRes = await fetch(debugUrl, { headers: { Accept: 'application/json' } });
+        const debugData = await debugRes.json().catch(() => ({}));
+        if (debugRes.ok && debugData.data?.granular_scopes) {
+          const waScope = debugData.data.granular_scopes.find((s: any) =>
+            s.scope === 'whatsapp_business_management' || s.scope === 'whatsapp_business_messaging'
+          );
+          if (waScope && Array.isArray(waScope.target_ids) && waScope.target_ids.length > 0) {
+            targetWabaId = waScope.target_ids[0];
+            console.log(`🔍 [WhatsApp Embedded Signup] Discovered WABA ID ${targetWabaId} from token granular scopes.`);
+          }
+        }
+      } catch (discErr) {
+        console.warn(`⚠️ [WhatsApp Embedded Signup] Granular scope WABA discovery note:`, discErr);
+      }
+    }
 
     // Step 2: Subscribe WABA to Webhook
     if (targetWabaId && finalToken) {
@@ -107,6 +175,28 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    // Discovery Step: If targetPhoneId is missing but we have targetWabaId and finalToken, query WABA phone numbers
+    if (!targetPhoneId && targetWabaId && finalToken) {
+      try {
+        const cleanWabaId = encodeURIComponent(targetWabaId);
+        const wabaRes = await fetch(`https://graph.facebook.com/${graphVersion}/${cleanWabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status`, {
+          headers: {
+            'Authorization': `Bearer ${finalToken}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        const wabaData = await wabaRes.json().catch(() => ({}));
+        if (wabaRes.ok && Array.isArray(wabaData.data) && wabaData.data.length > 0) {
+          const firstPhone = wabaData.data[0];
+          targetPhoneId = firstPhone.id;
+          console.log(`🔍 [WhatsApp Embedded Signup] Discovered Phone Number ID ${targetPhoneId} from WABA.`);
+        }
+      } catch (wabaPhoneErr) {
+        console.warn(`⚠️ [WhatsApp Embedded Signup] WABA phone numbers query note:`, wabaPhoneErr);
+      }
+    }
+
     // Step 3: Register phone number if needed
     if (targetPhoneId && finalToken) {
       try {
@@ -126,7 +216,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // Step 4: Fetch details from Meta Graph API
+    // Step 4: Fetch verified phone details from Meta Graph API
     let verifiedName = 'WhatsApp Business';
     let displayPhoneNumber = '';
     let qualityRating = 'GREEN';
@@ -135,7 +225,7 @@ export default async function handler(req: any, res: any) {
     if (targetPhoneId && finalToken) {
       try {
         const cleanPhoneId = encodeURIComponent(targetPhoneId);
-        const metaRes = await fetch(`https://graph.facebook.com/${graphVersion}/${cleanPhoneId}?fields=id,display_phone_number,verified_name,quality_rating`, {
+        const metaRes = await fetch(`https://graph.facebook.com/${graphVersion}/${cleanPhoneId}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status`, {
           headers: {
             'Authorization': `Bearer ${finalToken}`,
             'Accept': 'application/json'
@@ -149,37 +239,17 @@ export default async function handler(req: any, res: any) {
           displayPhoneNumber = metaData.display_phone_number || targetPhoneId;
           qualityRating = metaData.quality_rating || 'GREEN';
         } else {
-          connStatus = 'Connection Error';
           console.warn(`⚠️ [WhatsApp Embedded Signup] Phone verification details query note:`, metaData?.error?.message || metaData);
           if (finalToken && targetPhoneId) {
-            connStatus = 'Connected'; // Allow connection if token and ID are valid
+            connStatus = 'Connected';
+            displayPhoneNumber = targetPhoneId;
+          } else {
+            connStatus = 'Connection Error';
           }
         }
       } catch (err: any) {
         connStatus = finalToken ? 'Connected' : 'Connection Error';
         console.error(`❌ [WhatsApp Embedded Signup] Exception querying phone details:`, err?.message || err);
-      }
-    } else if (targetWabaId && finalToken && !targetPhoneId) {
-      try {
-        const cleanWabaId = encodeURIComponent(targetWabaId);
-        const wabaRes = await fetch(`https://graph.facebook.com/${graphVersion}/${cleanWabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating`, {
-          headers: {
-            'Authorization': `Bearer ${finalToken}`,
-            'Accept': 'application/json'
-          }
-        });
-
-        const wabaData = await wabaRes.json().catch(() => ({}));
-        if (wabaRes.ok && Array.isArray(wabaData.data) && wabaData.data.length > 0) {
-          const firstPhone = wabaData.data[0];
-          targetPhoneId = firstPhone.id;
-          displayPhoneNumber = firstPhone.display_phone_number || '';
-          verifiedName = firstPhone.verified_name || displayPhoneNumber || 'WhatsApp Business';
-          qualityRating = firstPhone.quality_rating || 'GREEN';
-          connStatus = 'Connected';
-        }
-      } catch (err: any) {
-        console.error(`❌ [WhatsApp Embedded Signup] Exception querying WABA phone numbers:`, err?.message || err);
       }
     } else if (finalToken) {
       connStatus = 'Connected';
@@ -199,7 +269,7 @@ export default async function handler(req: any, res: any) {
       webhook_verify_token: existing?.webhook_verify_token || 'fishcatch_verify_token_123',
       status: connStatus,
       last_verified_at: connStatus === 'Connected' ? new Date().toISOString() : existing?.last_verified_at || null,
-      error_message: connStatus === 'Connection Error' ? 'Meta Graph API verification failed.' : null,
+      error_message: connStatus === 'Connection Error' ? 'Meta Graph API phone verification failed.' : null,
       last_webhook_received_at: existing?.last_webhook_received_at || null,
       coexistence_enabled: true,
       coexistence_mode: (coexistence_mode || 'embedded_signup') as any,
@@ -223,7 +293,10 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       success: true,
       status: connStatus,
-      message: 'WhatsApp connection saved via Meta Embedded Signup',
+      message: 'WhatsApp connected successfully via Meta Embedded Signup.',
+      display_name: saved.display_name,
+      phone_number: saved.phone_number,
+      quality_rating: saved.quality_rating,
       connection: {
         ...saved,
         webhook_status: webhookStatus,
@@ -232,12 +305,14 @@ export default async function handler(req: any, res: any) {
       connections: maskedConnections
     });
   } catch (err: any) {
-    console.error('[WhatsApp Embedded Signup ERROR]:', err?.message || err);
+    console.error('❌ [WhatsApp Embedded Signup Fatal Exception]:', err?.message || err);
     return res.status(500).json({
       success: false,
       status: 'Error',
-      error: `Embedded Signup processing failed: ${err?.message || String(err)}`
+      error: {
+        code: 'EMBEDDED_SIGNUP_FATAL_ERROR',
+        message: `Embedded Signup processing failed: ${err?.message || String(err)}`
+      }
     });
   }
 }
-

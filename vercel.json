@@ -35,6 +35,14 @@
       "destination": "/api/whatsapp/embedded-signup"
     },
     {
+      "source": "/api/whatsapp/templates",
+      "destination": "/api/whatsapp/templates"
+    },
+    {
+      "source": "/api/whatsapp/templates/(.*)",
+      "destination": "/api/whatsapp/templates"
+    },
+    {
       "source": "/api/whatsapp/data-deletion",
       "destination": "/api/whatsapp/data-deletion"
     },

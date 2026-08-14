@@ -15,7 +15,10 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({
       success: false,
       status: 'Method Not Allowed',
-      error: `Method ${req.method} not allowed. Please use POST.`
+      error: {
+        code: 'METHOD_NOT_ALLOWED',
+        message: `Method ${req.method} not allowed. Please use POST.`
+      }
     });
   }
 
@@ -28,12 +31,15 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({
           success: false,
           status: 'Bad Request',
-          error: 'Invalid JSON request body.'
+          error: {
+            code: 'INVALID_JSON',
+            message: 'Invalid JSON request body.'
+          }
         });
       }
     }
 
-    const businessId = 'bus_admin_platform';
+    const businessId = body.business_id || 'bus_admin_platform';
     let existing = await db.getWhatsAppConnectionByBusinessId(businessId);
 
     let phoneNumberId = (body.phone_number_id || body.phoneNumberId || existing?.phone_number_id || '').toString().trim();
@@ -43,7 +49,7 @@ export default async function handler(req: any, res: any) {
       accessToken = existing?.access_token || '';
     }
 
-    const metaAppId = (body.meta_app_id || body.metaAppId || existing?.meta_app_id || '').toString().trim();
+    const metaAppId = (body.meta_app_id || body.metaAppId || existing?.meta_app_id || '3356483501181888').toString().trim();
     const wabaId = (body.waba_id || body.wabaId || existing?.waba_id || '').toString().trim();
     const webhookVerifyToken = (body.webhook_verify_token || body.webhookVerifyToken || existing?.webhook_verify_token || 'fishcatch_verify_token_123').toString().trim();
 
@@ -58,13 +64,16 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({
         success: false,
         status: 'Not Connected',
-        error: 'Phone Number ID and Access Token are required.'
+        error: {
+          code: 'MISSING_CREDENTIALS',
+          message: 'Phone Number ID and Access Token are required to test connection.'
+        }
       });
     }
 
-    // Call Meta Graph API directly
+    const graphVersion = process.env.META_GRAPH_API_VERSION || 'v25.0';
     const cleanPhoneId = encodeURIComponent(phoneNumberId);
-    const metaUrl = `https://graph.facebook.com/v21.0/${cleanPhoneId}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status`;
+    const metaUrl = `https://graph.facebook.com/${graphVersion}/${cleanPhoneId}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status`;
 
     const metaRes = await fetch(metaUrl, {
       method: 'GET',
@@ -144,7 +153,11 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({
         success: false,
         status: 'Connection Error',
-        error: metaErrorMsg,
+        error: {
+          code: 'META_VERIFICATION_FAILED',
+          message: metaErrorMsg,
+          details: metaData?.error
+        },
         connection: {
           ...saved,
           access_token: '••••••••••••••••'
@@ -152,11 +165,14 @@ export default async function handler(req: any, res: any) {
       });
     }
   } catch (err: any) {
-    console.error('[STANDALONE /api/whatsapp/test ERROR]:', err?.message || err);
+    console.error('❌ [api/whatsapp/test ERROR]:', err?.message || err);
     return res.status(500).json({
       success: false,
       status: 'Error',
-      error: `Verification error: ${err?.message || String(err)}`
+      error: {
+        code: 'TEST_EXCEPTION',
+        message: `Verification error: ${err?.message || String(err)}`
+      }
     });
   }
 }

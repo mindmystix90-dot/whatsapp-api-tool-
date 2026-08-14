@@ -2,11 +2,11 @@
   {
     "id": "wa_admin_platform",
     "business_id": "bus_admin_platform",
-    "meta_app_id": "",
-    "waba_id": "",
+    "meta_app_id": "3356483501181888",
+    "waba_id": "2934849833375100",
     "phone_number_id": "",
     "phone_number": "",
-    "display_name": "Fishcatch Admin",
+    "display_name": "",
     "access_token": "",
     "webhook_verify_token": "fishcatch_verify_token_123",
     "status": "Not Connected",
@@ -17,7 +17,8 @@
     "coexistence_mode": "manual",
     "safety_status": "GREEN",
     "safety_paused": false,
-    "created_at": "2026-08-13T13:05:04.685Z",
-    "updated_at": "2026-08-13T13:05:04.685Z"
+    "created_at": "2026-08-14T07:20:53.895Z",
+    "updated_at": "2026-08-14T07:24:49.682Z",
+    "quality_rating": "GREEN"
   }
 ]
