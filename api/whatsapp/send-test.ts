@@ -1,12 +1,14 @@
 import { db } from '../../server/db.js';
+import { resolveAuthenticatedUser } from '../../server/auth.js';
+import { sendWhatsAppTextMessage } from '../../server/whatsapp.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).json({ ok: true });
   }
 
@@ -22,6 +24,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const user = await resolveAuthenticatedUser(req);
+    if (!user || !user.business_id) {
+      return res.status(401).json({
+        success: false,
+        status: 'Unauthorized',
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required. Please log in.'
+        }
+      });
+    }
+
     let body = req.body || {};
     if (typeof body === 'string' && body.trim()) {
       try {
@@ -42,7 +56,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const businessId = body.business_id || 'bus_admin_platform';
+    const businessId = user.business_id;
     const existing = await db.getWhatsAppConnectionByBusinessId(businessId);
 
     let phoneNumberId = (body.phone_number_id || body.phoneNumberId || existing?.phone_number_id || '').toString().trim();
@@ -76,58 +90,34 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const graphVersion = process.env.META_GRAPH_API_VERSION || 'v25.0';
-    const cleanPhoneId = encodeURIComponent(phoneNumberId);
-    const metaUrl = `https://graph.facebook.com/${graphVersion}/${cleanPhoneId}/messages`;
+    const connection = {
+      ...existing,
+      id: existing?.id || `wa_${businessId}`,
+      business_id: businessId,
+      phone_number_id: phoneNumberId,
+      access_token: accessToken,
+      status: 'Connected' as const
+    };
 
-    console.log(`💬 [/api/whatsapp/send-test] Sending test message via Meta API to ${cleanRecipient} using PhoneId: ${phoneNumberId}`);
+    const sendResult = await sendWhatsAppTextMessage(connection, cleanRecipient, messageBody.toString());
 
-    const metaRes = await fetch(metaUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: cleanRecipient,
-        type: 'text',
-        text: { body: messageBody.toString() }
-      })
-    });
-
-    const metaData = await metaRes.json().catch(() => ({}));
-
-    if (metaRes.ok && metaData.messages?.[0]?.id) {
-      const waMsgId = metaData.messages[0].id;
-      console.log(`✅ [/api/whatsapp/send-test] Message sent successfully. WA ID: ${waMsgId}`);
+    if (sendResult.success) {
       return res.status(200).json({
         success: true,
-        wa_message_id: waMsgId,
-        message: `Test message sent successfully to ${recipientPhone}`
+        wa_message_id: sendResult.wa_message_id,
+        message: `Test message sent successfully to ${cleanRecipient}`
       });
     } else {
-      const errorMsg = metaData?.error?.message || `Meta Graph API returned HTTP ${metaRes.status}`;
-      console.error(`❌ [/api/whatsapp/send-test] Meta API Error:`, metaData);
       return res.status(400).json({
         success: false,
-        status: 'Meta API Error',
-        error: {
-          code: 'META_SEND_ERROR',
-          message: `Meta Cloud API Error: ${errorMsg}`,
-          details: metaData?.error
-        }
+        error: sendResult.error || 'Failed to send test message'
       });
     }
   } catch (err: any) {
-    console.error('❌ [/api/whatsapp/send-test Exception]:', err?.message || err);
+    console.error('[STANDALONE /api/whatsapp/send-test ERROR]:', err?.message || err);
     return res.status(500).json({
       success: false,
-      status: 'Error',
-      error: {
-        code: 'SEND_EXCEPTION',
-        message: `Failed to send test message: ${err?.message || String(err)}`
-      }
+      error: `Failed to send test message: ${err?.message || String(err)}`
     });
   }
 }

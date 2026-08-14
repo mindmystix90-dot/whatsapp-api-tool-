@@ -16,7 +16,8 @@ import {
 import {
   verifyWhatsAppCredentials,
   sendWhatsAppTextMessage,
-  sendWhatsAppTemplateMessage
+  sendWhatsAppTemplateMessage,
+  processEmbeddedSignup
 } from './server/whatsapp.js';
 import { generateAIReply } from './server/gemini.js';
 import { handleWebhookVerification, handleWebhookEvent } from './server/webhook.js';
@@ -988,64 +989,31 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
   // EMBEDDED SIGNUP / COEXISTENCE API
   // ==========================================
   app.post('/api/whatsapp/embedded-signup', authenticateToken, async (req: AuthenticatedRequest, res) => {
-    const { waba_id, phone_number_id, access_token, coexistence_mode } = req.body;
+    try {
+      const { code, phone_number_id, waba_id, meta_app_id, access_token, coexistence_mode } = req.body || {};
 
-    if (!waba_id || !phone_number_id) {
-      return res.status(400).json({ error: 'WABA ID and Phone Number ID are required.' });
+      const result = await processEmbeddedSignup({
+        businessId: req.user!.business_id,
+        code,
+        phoneNumberId: phone_number_id,
+        wabaId: waba_id,
+        metaAppId: meta_app_id,
+        accessToken: access_token,
+        coexistenceMode: coexistence_mode
+      });
+
+      return res.status(result.status).json(result.body);
+    } catch (err: any) {
+      console.error('❌ Exception in /api/whatsapp/embedded-signup route:', err);
+      return res.status(500).json({
+        success: false,
+        status: 'Error',
+        error: {
+          code: 'EMBEDDED_SIGNUP_FATAL_ERROR',
+          message: `Server error during Embedded Signup: ${err?.message || String(err)}`
+        }
+      });
     }
-
-    const existing = await db.getWhatsAppConnectionByBusinessId(req.user!.business_id);
-    const tokenToSave = access_token && !access_token.includes('••••') ? access_token : existing?.access_token || '';
-
-    // Verify credentials with Meta Graph API
-    let connStatus: any = 'Not Connected';
-    let displayName = 'WhatsApp Business';
-    let displayPhone = '';
-    let qualityRating = 'GREEN';
-
-    if (tokenToSave) {
-      const verification = await verifyWhatsAppCredentials(phone_number_id, tokenToSave);
-      if (verification.success) {
-        connStatus = 'Connected';
-        displayName = verification.display_name || 'WhatsApp Business';
-        displayPhone = verification.display_phone_number || '';
-        qualityRating = verification.quality_rating || 'GREEN';
-      } else {
-        connStatus = 'Connection Error';
-      }
-    }
-
-    const updatedConn = await db.upsertWhatsAppConnection({
-      id: existing?.id || `wa_${req.user!.business_id}`,
-      business_id: req.user!.business_id,
-      meta_app_id: existing?.meta_app_id || '',
-      waba_id: waba_id,
-      phone_number_id: phone_number_id,
-      phone_number: displayPhone || existing?.phone_number || '',
-      display_name: displayName || existing?.display_name || '',
-      access_token: tokenToSave,
-      webhook_verify_token: existing?.webhook_verify_token || 'fishcatch_verify_token_123',
-      status: connStatus,
-      last_verified_at: connStatus === 'Connected' ? new Date().toISOString() : existing?.last_verified_at || null,
-      last_webhook_received_at: existing?.last_webhook_received_at || null,
-      error_message: null,
-      coexistence_enabled: true,
-      coexistence_mode: coexistence_mode || 'embedded_signup',
-      quality_rating: qualityRating as any,
-      safety_status: existing?.safety_status || 'GREEN',
-      safety_paused: existing?.safety_paused || false,
-      safety_paused_reason: existing?.safety_paused_reason || null,
-      created_at: existing?.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    });
-
-    res.json({
-      success: true,
-      connection: {
-        ...updatedConn,
-        access_token: updatedConn.access_token ? '••••••••••••••••' : ''
-      }
-    });
   });
   app.get('/api/dashboard/stats', authenticateToken, async (req: AuthenticatedRequest, res) => {
     const businessId = req.user!.business_id;
@@ -1204,7 +1172,7 @@ app.post(['/api/auth/signup', '/api/auth/register'], async (req, res) => {
     }
   }
 
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.TESTING !== 'true') {
   appReady.then(() => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Fishcatch Backend running on http://0.0.0.0:${PORT}`);

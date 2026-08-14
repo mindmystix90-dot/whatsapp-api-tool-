@@ -1,13 +1,15 @@
 import { db } from '../../server/db.js';
+import { resolveAuthenticatedUser } from '../../server/auth.js';
+import { verifyWhatsAppCredentials } from '../../server/whatsapp.js';
 import { WhatsAppConnectionStatus } from '../../src/types.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).json({ ok: true });
   }
 
@@ -23,6 +25,18 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const user = await resolveAuthenticatedUser(req);
+    if (!user || !user.business_id) {
+      return res.status(401).json({
+        success: false,
+        status: 'Unauthorized',
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required. Please log in.'
+        }
+      });
+    }
+
     let body = req.body || {};
     if (typeof body === 'string' && body.trim()) {
       try {
@@ -39,7 +53,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const businessId = body.business_id || 'bus_admin_platform';
+    const businessId = user.business_id;
     let existing = await db.getWhatsAppConnectionByBusinessId(businessId);
 
     let phoneNumberId = (body.phone_number_id || body.phoneNumberId || existing?.phone_number_id || '').toString().trim();
@@ -71,29 +85,17 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const graphVersion = process.env.META_GRAPH_API_VERSION || 'v25.0';
-    const cleanPhoneId = encodeURIComponent(phoneNumberId);
-    const metaUrl = `https://graph.facebook.com/${graphVersion}/${cleanPhoneId}?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status`;
+    const verification = await verifyWhatsAppCredentials(phoneNumberId, accessToken);
 
-    const metaRes = await fetch(metaUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json'
-      }
-    });
-
-    const metaData = await metaRes.json().catch(() => ({}));
-
-    if (metaRes.ok && metaData.id) {
+    if (verification.success) {
       const connToSave = {
         id: existing?.id || `wa_${businessId}`,
         business_id: businessId,
         meta_app_id: metaAppId,
         waba_id: wabaId,
         phone_number_id: phoneNumberId,
-        phone_number: metaData.display_phone_number || phoneNumberId,
-        display_name: metaData.verified_name || metaData.display_phone_number || 'Meta WhatsApp Business',
+        phone_number: verification.display_phone_number || existing?.phone_number || phoneNumberId,
+        display_name: verification.display_name || existing?.display_name || 'Meta WhatsApp Business',
         access_token: accessToken,
         webhook_verify_token: webhookVerifyToken,
         status: 'Connected' as WhatsAppConnectionStatus,
@@ -102,7 +104,7 @@ export default async function handler(req: any, res: any) {
         last_webhook_received_at: existing?.last_webhook_received_at || null,
         coexistence_enabled: existing?.coexistence_enabled || false,
         coexistence_mode: existing?.coexistence_mode || 'manual',
-        quality_rating: metaData.quality_rating || 'GREEN',
+        quality_rating: (verification.quality_rating || 'GREEN') as any,
         safety_status: existing?.safety_status || 'GREEN',
         safety_paused: false,
         created_at: existing?.created_at || new Date().toISOString(),
@@ -123,21 +125,19 @@ export default async function handler(req: any, res: any) {
         }
       });
     } else {
-      const metaErrorMsg = metaData?.error?.message || `Meta Graph API returned HTTP ${metaRes.status}`;
-
       const connToSave = {
         id: existing?.id || `wa_${businessId}`,
         business_id: businessId,
         meta_app_id: metaAppId,
         waba_id: wabaId,
         phone_number_id: phoneNumberId,
-        phone_number: existing?.phone_number || '',
-        display_name: existing?.display_name || '',
+        phone_number: existing?.phone_number || phoneNumberId,
+        display_name: existing?.display_name || 'Meta WhatsApp Business',
         access_token: accessToken,
         webhook_verify_token: webhookVerifyToken,
         status: 'Connection Error' as WhatsAppConnectionStatus,
         last_verified_at: existing?.last_verified_at || null,
-        error_message: metaErrorMsg,
+        error_message: verification.error || 'Failed to verify WhatsApp credentials.',
         last_webhook_received_at: existing?.last_webhook_received_at || null,
         coexistence_enabled: existing?.coexistence_enabled || false,
         coexistence_mode: existing?.coexistence_mode || 'manual',
@@ -154,9 +154,8 @@ export default async function handler(req: any, res: any) {
         success: false,
         status: 'Connection Error',
         error: {
-          code: 'META_VERIFICATION_FAILED',
-          message: metaErrorMsg,
-          details: metaData?.error
+          code: 'VERIFICATION_FAILED',
+          message: verification.error || 'Failed to verify WhatsApp credentials with Meta Graph API.'
         },
         connection: {
           ...saved,
@@ -165,13 +164,13 @@ export default async function handler(req: any, res: any) {
       });
     }
   } catch (err: any) {
-    console.error('❌ [api/whatsapp/test ERROR]:', err?.message || err);
+    console.error('[STANDALONE /api/whatsapp/test ERROR]:', err?.message || err);
     return res.status(500).json({
       success: false,
       status: 'Error',
       error: {
-        code: 'TEST_EXCEPTION',
-        message: `Verification error: ${err?.message || String(err)}`
+        code: 'TEST_ROUTE_FATAL_ERROR',
+        message: `Server error during verification: ${err?.message || String(err)}`
       }
     });
   }

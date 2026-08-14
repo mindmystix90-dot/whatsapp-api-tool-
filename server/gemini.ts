@@ -88,16 +88,29 @@ Please generate the appropriate WhatsApp response following all your guidelines.
 `.trim();
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.3 // Low temperature to stay factual to business info
-      }
-    });
-
-    const replyText = response.text?.trim();
+    let replyText = '';
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.7-flash',
+        contents: prompt,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.3
+        }
+      });
+      replyText = response.text?.trim() || '';
+    } catch (e: any) {
+      console.warn('⚠️ Primary model failed, falling back to gemini-3.1-flash-lite:', e?.message || e);
+      const fallbackRes = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: prompt,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.3
+        }
+      });
+      replyText = fallbackRes.text?.trim() || '';
+    }
 
     if (!replyText) {
       throw new Error('Gemini API returned empty text response.');

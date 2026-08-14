@@ -688,11 +688,46 @@ class FirestoreDatabase {
         const snap = await firestore!
           .collection(COLLECTIONS.WHATSAPP_CONNECTIONS)
           .where('phoneNumberId', '==', phoneNumberId)
-          .limit(1)
           .get();
         if (!snap.empty) {
-          const doc = snap.docs[0];
-          const data = doc.data();
+          const docs = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+          docs.sort((a, b) => new Date(b.data.updatedAt || b.data.createdAt || 0).getTime() - new Date(a.data.updatedAt || a.data.createdAt || 0).getTime());
+
+          for (const cand of docs) {
+            const bizId = cand.data.businessId || cand.data.business_id;
+            if (bizId) {
+              const bizDoc = await firestore!.collection(COLLECTIONS.BUSINESSES).doc(bizId).get();
+              if (bizDoc.exists) {
+                const data = cand.data;
+                return {
+                  id: cand.id,
+                  business_id: data.businessId || data.business_id,
+                  meta_app_id: data.metaAppId || data.meta_app_id || '',
+                  waba_id: data.wabaId || data.waba_id || '',
+                  phone_number_id: data.phoneNumberId || data.phone_number_id || '',
+                  phone_number: data.phoneNumber || data.phone_number || '',
+                  display_name: data.displayName || data.display_name || '',
+                  access_token: data.accessToken || data.access_token || '',
+                  webhook_verify_token: data.webhookVerifyToken || data.webhook_verify_token || '',
+                  status: data.status || 'Not Connected',
+                  last_verified_at: data.lastVerifiedAt || data.last_verified_at || null,
+                  last_webhook_received_at: data.lastWebhookReceivedAt || data.last_webhook_received_at || null,
+                  error_message: data.errorMessage || data.error_message || null,
+                  coexistence_enabled: data.coexistenceEnabled ?? data.coexistence_enabled ?? false,
+                  coexistence_mode: data.coexistenceMode || data.coexistence_mode || 'none',
+                  quality_rating: data.qualityRating || data.quality_rating || 'GREEN',
+                  safety_status: data.safetyStatus || data.safety_status || 'GREEN',
+                  safety_paused: data.safetyPaused ?? data.safety_paused ?? false,
+                  safety_paused_reason: data.safetyPausedReason || data.safety_paused_reason || null,
+                  created_at: data.createdAt || data.created_at || new Date().toISOString(),
+                  updated_at: data.updatedAt || data.updated_at || new Date().toISOString()
+                };
+              }
+            }
+          }
+
+          const doc = docs[0];
+          const data = doc.data;
           return {
             id: doc.id,
             business_id: data.businessId || data.business_id,
@@ -722,7 +757,18 @@ class FirestoreDatabase {
       }
     }
 
-    return this.mem.whatsappConnections.find((w) => w.phone_number_id === phoneNumberId && phoneNumberId !== '');
+    const matches = this.mem.whatsappConnections.filter((w) => w.phone_number_id === phoneNumberId && phoneNumberId !== '');
+    if (matches.length === 0) return undefined;
+
+    matches.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+
+    for (const match of matches) {
+      if (this.mem.businesses.some((b) => b.id === match.business_id)) {
+        return match;
+      }
+    }
+
+    return matches[0];
   }
 
   public async getAllWhatsAppConnections(): Promise<WhatsAppConnection[]> {
@@ -1533,14 +1579,22 @@ class FirestoreDatabase {
     this.ensureDatabaseReady();
 
     if (this.isUsingFirestore()) {
-      await firestore!.collection(COLLECTIONS.TEMPLATES).doc(id).delete();
+      const doc = await firestore!.collection(COLLECTIONS.TEMPLATES).doc(id).get();
+      if (!doc.exists) return false;
+      const data = doc.data()!;
+      if ((data.businessId || data.business_id) !== businessId) {
+        return false;
+      }
+      await doc.ref.delete();
       return true;
     }
 
     if ((this.mem as any).templates) {
-      (this.mem as any).templates = (this.mem as any).templates.filter((t: any) => t.id !== id);
+      const initialLen = (this.mem as any).templates.length;
+      (this.mem as any).templates = (this.mem as any).templates.filter((t: any) => !(t.id === id && t.business_id === businessId));
+      return (this.mem as any).templates.length !== initialLen;
     }
-    return true;
+    return false;
   }
 
   // --- Safety Settings ---

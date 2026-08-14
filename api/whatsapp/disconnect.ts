@@ -1,12 +1,13 @@
 import { db } from '../../server/db.js';
+import { resolveAuthenticatedUser } from '../../server/auth.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).json({ ok: true });
   }
 
@@ -15,7 +16,15 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const businessId = 'bus_admin_platform';
+    const user = await resolveAuthenticatedUser(req);
+    if (!user || !user.business_id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. Please log in.'
+      });
+    }
+
+    const businessId = user.business_id;
     const existing = await db.getWhatsAppConnectionByBusinessId(businessId);
 
     if (existing) {

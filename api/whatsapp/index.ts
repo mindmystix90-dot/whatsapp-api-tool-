@@ -1,4 +1,5 @@
 import { db } from '../../server/db.js';
+import { resolveAuthenticatedUser } from '../../server/auth.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -11,11 +12,19 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const businessId = 'bus_admin_platform';
+    const user = await resolveAuthenticatedUser(req);
+    if (!user || !user.business_id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. Please log in.'
+      });
+    }
+
+    const businessId = user.business_id;
     let connection = await db.getWhatsAppConnectionByBusinessId(businessId);
 
     if (!connection) {
-      connection = await db.upsertWhatsAppConnection({
+      connection = {
         id: `wa_${businessId}`,
         business_id: businessId,
         meta_app_id: '3356483501181888',
@@ -35,11 +44,12 @@ export default async function handler(req: any, res: any) {
         safety_paused: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      };
     }
 
     const allConnections = await db.getWhatsAppConnectionsByBusinessId(businessId);
-    const maskedConnections = allConnections.map((c) => ({
+    const connList = allConnections.length > 0 ? allConnections : (connection ? [connection] : []);
+    const maskedConnections = connList.map((c) => ({
       ...c,
       access_token: c.access_token ? '••••••••••••••••' : ''
     }));

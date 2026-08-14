@@ -7,8 +7,8 @@ import { User, Role } from '../src/types.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'fishcatch_super_secret_jwt_key_2026';
 
 export function isPersonalMode(): boolean {
-  // PERSONAL_MODE is enabled by default unless explicitly set to 'false'
-  return process.env.PERSONAL_MODE !== 'false';
+  // Only enable personal single-user mode if explicitly configured
+  return process.env.PERSONAL_MODE === 'true';
 }
 
 export async function getPersonalUser(): Promise<User> {
@@ -54,21 +54,28 @@ export function generateToken(user: User): string {
   );
 }
 
-export async function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+export async function resolveAuthenticatedUser(req: any): Promise<User | null> {
+  if (req?.user) return req.user;
+
+  let authHeader = req?.headers?.authorization || req?.headers?.Authorization;
+  if (!authHeader && typeof req?.headers?.get === 'function') {
+    authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+  }
+
+  const token = authHeader && typeof authHeader === 'string' ? authHeader.split(' ')[1] : null;
 
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      const user = await db.findUserById(decoded.id);
-
-      if (user) {
-        req.user = user;
-        return next();
+      if (decoded?.id) {
+        const user = await db.findUserById(decoded.id);
+        if (user) {
+          req.user = user;
+          return user;
+        }
       }
     } catch (err) {
-      // Invalid/expired token; proceed to check if PERSONAL_MODE applies
+      // Invalid/expired token; proceed to check if personal mode applies
     }
   }
 
@@ -76,12 +83,21 @@ export async function authenticateToken(req: AuthenticatedRequest, res: Response
     try {
       const personalUser = await getPersonalUser();
       req.user = personalUser;
-      return next();
+      return personalUser;
     } catch (err) {
-      console.error('Error attaching personal user:', err);
+      console.error('Error resolving personal user:', err);
     }
   }
 
+  return null;
+}
+
+export async function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  const user = await resolveAuthenticatedUser(req);
+  if (user) {
+    req.user = user;
+    return next();
+  }
   return res.status(401).json({ error: 'Authentication token required' });
 }
 

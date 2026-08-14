@@ -1,12 +1,13 @@
 import { db } from '../../server/db.js';
+import { resolveAuthenticatedUser } from '../../server/auth.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).json({ ok: true });
   }
 
@@ -18,6 +19,14 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const user = await resolveAuthenticatedUser(req);
+    if (!user || !user.business_id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. Please log in.'
+      });
+    }
+
     let body = req.body || {};
     if (typeof body === 'string' && body.trim()) {
       try {
@@ -26,7 +35,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const { meta_app_id, waba_id, phone_number_id, access_token, webhook_verify_token } = body;
-    const businessId = 'bus_admin_platform';
+    const businessId = user.business_id;
 
     let existing = await db.getWhatsAppConnectionByBusinessId(businessId);
 
@@ -41,7 +50,7 @@ export default async function handler(req: any, res: any) {
     const connToSave = {
       id: existing?.id || `wa_${businessId}`,
       business_id: businessId,
-      meta_app_id: meta_app_id ?? existing?.meta_app_id ?? '',
+      meta_app_id: meta_app_id ?? existing?.meta_app_id ?? '3356483501181888',
       waba_id: waba_id ?? existing?.waba_id ?? '',
       phone_number_id: cleanPhoneId,
       phone_number: existing?.phone_number || '',
