@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Business } from '../types';
+import { useAuth } from '../context/AuthContext.js';
+import { Business } from '../types.js';
 import {
   Building2,
   Save,

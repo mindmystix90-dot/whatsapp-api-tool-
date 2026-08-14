@@ -1,6 +1,6 @@
 import React from 'react';
 import { FileText, ArrowLeft, ShieldAlert, CheckCircle2, Scale, ExternalLink } from 'lucide-react';
-import { Footer } from '../components/Footer';
+import { Footer } from '../components/Footer.js';
 
 interface TermsViewProps {
   onNavigate?: (path: string) => void;

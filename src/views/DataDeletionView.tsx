@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, ArrowLeft, Search, CheckCircle2, AlertTriangle, ShieldCheck, ExternalLink } from 'lucide-react';
-import { Footer } from '../components/Footer';
+import { Footer } from '../components/Footer.js';
 
 interface DataDeletionViewProps {
   onNavigate?: (path: string) => void;

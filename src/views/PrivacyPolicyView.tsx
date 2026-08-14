@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldCheck, ArrowLeft, Lock, Database, UserCheck, Trash2, Mail, ExternalLink, CheckCircle2 } from 'lucide-react';
-import { Footer } from '../components/Footer';
+import { Footer } from '../components/Footer.js';
 
 interface PrivacyPolicyViewProps {
   onNavigate?: (path: string) => void;

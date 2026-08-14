@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { AISettings } from '../types';
+import { useAuth } from '../context/AuthContext.js';
+import { AISettings } from '../types.js';
 import {
   Bot,
   Save,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Conversation, Message, Lead, LeadStatus, ConversationMode } from '../types';
+import { useAuth } from '../context/AuthContext.js';
+import { Conversation, Message, Lead, LeadStatus, ConversationMode } from '../types.js';
 import {
   MessageSquare,
   Search,

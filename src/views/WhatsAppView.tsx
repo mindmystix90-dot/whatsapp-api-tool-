@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { WhatsAppConnection } from '../types';
+import { useAuth } from '../context/AuthContext.js';
+import { WhatsAppConnection } from '../types.js';
 import {
   MessageCircleCode,
   CheckCircle2,

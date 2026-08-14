@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { NavTab } from './Sidebar';
-import { useAuth } from '../context/AuthContext';
-import { WhatsAppConnectionStatus } from '../types';
+import { NavTab } from './Sidebar.js';
+import { useAuth } from '../context/AuthContext.js';
+import { WhatsAppConnectionStatus } from '../types.js';
 import { RefreshCw, Radio } from 'lucide-react';
 
 interface HeaderProps {

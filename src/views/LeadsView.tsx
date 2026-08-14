@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Lead, LeadStatus } from '../types';
-import { NavTab } from '../components/Sidebar';
+import { useAuth } from '../context/AuthContext.js';
+import { Lead, LeadStatus } from '../types.js';
+import { NavTab } from '../components/Sidebar.js';
 import {
   Users,
   Search,

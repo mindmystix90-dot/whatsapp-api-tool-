@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { Sidebar, NavTab } from './components/Sidebar';
-import { Header } from './components/Header';
-import { Footer } from './components/Footer';
+import { AuthProvider, useAuth } from './context/AuthContext.js';
+import { Sidebar, NavTab } from './components/Sidebar.js';
+import { Header } from './components/Header.js';
+import { Footer } from './components/Footer.js';
 
 // Views
-import { DashboardView } from './views/DashboardView';
-import { ConversationsView } from './views/ConversationsView';
-import { LeadsView } from './views/LeadsView';
-import { AIAgentView } from './views/AIAgentView';
-import { WhatsAppView } from './views/WhatsAppView';
-import { SettingsView } from './views/SettingsView';
-import { SafetyCenterView } from './views/SafetyCenterView';
-import { AdminView } from './views/AdminView';
-import { AuthView } from './views/AuthView';
-import { PrivacyPolicyView } from './views/PrivacyPolicyView';
-import { TermsView } from './views/TermsView';
-import { DataDeletionView } from './views/DataDeletionView';
+import { DashboardView } from './views/DashboardView.js';
+import { ConversationsView } from './views/ConversationsView.js';
+import { LeadsView } from './views/LeadsView.js';
+import { AIAgentView } from './views/AIAgentView.js';
+import { WhatsAppView } from './views/WhatsAppView.js';
+import { SettingsView } from './views/SettingsView.js';
+import { SafetyCenterView } from './views/SafetyCenterView.js';
+import { AdminView } from './views/AdminView.js';
+import { AuthView } from './views/AuthView.js';
+import { PrivacyPolicyView } from './views/PrivacyPolicyView.js';
+import { TermsView } from './views/TermsView.js';
+import { DataDeletionView } from './views/DataDeletionView.js';
 
 import { Fish } from 'lucide-react';
 

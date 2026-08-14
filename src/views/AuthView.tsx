@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext.js';
 import { Fish, ArrowRight, ShieldCheck, CheckCircle2, Lock, Mail, User, Building2 } from 'lucide-react';
-import { Footer } from '../components/Footer';
+import { Footer } from '../components/Footer.js';
 
 interface AuthViewProps {
   onNavigate?: (path: string) => void;

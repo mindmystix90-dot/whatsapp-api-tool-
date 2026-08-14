@@ -11,7 +11,7 @@ import {
   LogOut,
   Fish
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext.js';
 
 export type NavTab = 'dashboard' | 'conversations' | 'leads' | 'ai-agent' | 'whatsapp' | 'safety' | 'settings' | 'admin';
 
